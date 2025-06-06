@@ -1,0 +1,153 @@
+# -*- mode: python ; coding: utf-8 -*-
+
+block_cipher = None
+
+# 数据文件 - 包含所有必要的资源
+datas = [
+    ('data', 'data'),
+    ('web', 'web'),
+    ('API_config', 'API_config'),
+    ('config.json', '.'),
+    ('web_server.py', '.'),
+    ('main.py', '.'),
+    ('services', 'services'),
+    ('utils', 'utils'),
+    ('ui', 'ui'),
+    ('gui', 'gui'),
+    ('tools', 'tools'),
+    ('requirements.txt', '.'),
+    ('logo.ico', '.'),
+]
+
+# 隐藏导入 - 确保所有必要模块都被包含
+hiddenimports = [
+    # Web框架相关
+    'fastapi',
+    'uvicorn',
+    'uvicorn.lifespan',
+    'uvicorn.lifespan.on',
+    'uvicorn.protocols',
+    'uvicorn.protocols.http',
+    'uvicorn.protocols.websockets',
+    'websockets',
+    'starlette',
+    'starlette.applications',
+    'starlette.routing',
+    'starlette.responses',
+    'starlette.staticfiles',
+    'starlette.templating',
+    'jinja2',
+    'aiofiles',
+
+    # 翻译服务相关
+    'services.translator',
+    'services.ollama_translator',
+    'services.zhipuai_translator',
+    'services.siliconflow_translator',
+    'services.base_translator',
+    'services.excel_processor',
+    'services.document_processor',
+    'services.pdf_processor',
+    'utils.terminology',
+    'utils.api_config',
+    'web.api',
+    'web.realtime_logger',
+
+    # 文档处理相关
+    'openpyxl',
+    'openpyxl.workbook',
+    'openpyxl.worksheet',
+    'python-docx',
+    'docx',
+    'docx.document',
+    'docx.shared',
+    'PyPDF2',
+    'pdfplumber',
+    'Pillow',
+    'PIL',
+    'PIL.Image',
+
+    # GUI相关
+    'tkinter',
+    'tkinter.ttk',
+    'tkinter.filedialog',
+    'tkinter.messagebox',
+    'tkinter.scrolledtext',
+
+    # 系统相关
+    'threading',
+    'asyncio',
+    'asyncio.events',
+    'asyncio.protocols',
+    'json',
+    'pathlib',
+    'datetime',
+    'logging',
+    'logging.handlers',
+    'subprocess',
+    'webbrowser',
+    'socket',
+    'time',
+    'os',
+    'sys',
+    'shutil',
+    'traceback',
+    'queue',
+    'concurrent.futures',
+    'multiprocessing',
+    'ssl',
+    'urllib',
+    'urllib.parse',
+    'urllib.request',
+    'base64',
+    'hashlib',
+    'uuid',
+    'tempfile',
+    'io',
+    'csv',
+    're',
+    'collections',
+    'functools',
+    'itertools',
+    'typing',
+]
+
+a = Analysis(
+    ['launcher.py'],
+    pathex=[],
+    binaries=[],
+    datas=datas,
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    name='多格式文档翻译助手_调试版_v3.1',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=True,  # 显示控制台窗口
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    cofile=None,
+    icon='logo.ico',
+)

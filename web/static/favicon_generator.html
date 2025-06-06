@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Favicon Generator</title>
+</head>
+<body>
+    <canvas id="canvas" width="32" height="32" style="border: 1px solid #000;"></canvas>
+    <br><br>
+    <button onclick="generateFavicon()">生成Favicon</button>
+    <br><br>
+    <div id="result"></div>
+
+    <script>
+        function generateFavicon() {
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // 清空画布
+            ctx.clearRect(0, 0, 32, 32);
+            
+            // 绘制背景圆形
+            ctx.fillStyle = '#007bff';
+            ctx.beginPath();
+            ctx.arc(16, 16, 15, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // 绘制边框
+            ctx.strokeStyle = '#0056b3';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            // 绘制左侧文档
+            ctx.fillStyle = 'white';
+            ctx.fillRect(6, 8, 8, 10);
+            ctx.strokeStyle = '#007bff';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(6, 8, 8, 10);
+            
+            // 绘制左侧文档内容线条
+            ctx.strokeStyle = '#007bff';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(8, 11);
+            ctx.lineTo(12, 11);
+            ctx.moveTo(8, 13);
+            ctx.lineTo(12, 13);
+            ctx.moveTo(8, 15);
+            ctx.lineTo(11, 15);
+            ctx.stroke();
+            
+            // 绘制箭头
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(14, 16);
+            ctx.lineTo(18, 16);
+            ctx.moveTo(16, 14);
+            ctx.lineTo(18, 16);
+            ctx.lineTo(16, 18);
+            ctx.stroke();
+            
+            // 绘制右侧文档
+            ctx.fillStyle = 'white';
+            ctx.fillRect(18, 8, 8, 10);
+            ctx.strokeStyle = '#007bff';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(18, 8, 8, 10);
+            
+            // 绘制右侧文档内容线条
+            ctx.strokeStyle = '#007bff';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(20, 11);
+            ctx.lineTo(24, 11);
+            ctx.moveTo(20, 13);
+            ctx.lineTo(24, 13);
+            ctx.moveTo(20, 15);
+            ctx.lineTo(23, 15);
+            ctx.stroke();
+            
+            // 绘制中文字符 "译"
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 8px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('译', 16, 26);
+            
+            // 转换为ICO格式的数据URL
+            const dataURL = canvas.toDataURL('image/png');
+            
+            // 创建下载链接
+            const link = document.createElement('a');
+            link.download = 'favicon.ico';
+            link.href = dataURL;
+            link.textContent = '下载 favicon.ico';
+            
+            const result = document.getElementById('result');
+            result.innerHTML = '';
+            result.appendChild(link);
+            
+            // 显示预览
+            const img = document.createElement('img');
+            img.src = dataURL;
+            img.style.width = '32px';
+            img.style.height = '32px';
+            img.style.marginLeft = '10px';
+            result.appendChild(img);
+        }
+        
+        // 页面加载时自动生成
+        window.onload = generateFavicon;
+    </script>
+</body>
+</html>

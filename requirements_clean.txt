@@ -1,0 +1,68 @@
+# 多格式文档翻译助手 - 项目依赖
+# 核心Web框架
+fastapi==0.115.4
+uvicorn[standard]==0.32.1
+python-multipart==0.0.17
+websockets==13.1
+
+# AI和翻译相关
+openai==0.27.8
+ollama==0.4.7
+requests==2.32.3
+httpx==0.28.1
+
+# 文档处理
+python-docx==1.1.2
+PyMuPDF==1.24.14
+python-pptx==1.0.2
+openpyxl==3.1.5
+PyPDF2==3.0.1
+pdf2image==1.17.0
+
+# 图像处理
+Pillow==10.4.0
+opencv-python==4.10.0.84
+
+# 数据处理
+pandas>=2.0.0
+numpy>=1.24.0
+jieba==0.42.1
+
+# 网络和HTTP
+aiohttp==3.11.10
+certifi==2024.8.30
+aiofiles==23.2.1
+
+# 工具库
+pydantic==2.10.6
+jinja2==3.1.4
+click==8.1.7
+colorama==0.4.6
+tqdm==4.67.1
+
+# 打包相关
+pyinstaller==6.11.1
+pyinstaller-hooks-contrib==2024.10
+
+# 其他必需依赖
+charset-normalizer==3.4.0
+idna==3.10
+urllib3==2.2.3
+six==1.16.0
+python-dateutil==2.9.0.post0
+pytz==2024.2
+setuptools==75.6.0
+wheel==0.45.1
+
+# Windows特定
+pywin32==305.1
+psutil==6.1.0
+chardet==5.2.0
+cryptography==43.0.3
+
+# 其他必要依赖
+typing-extensions==4.12.2
+anyio==4.6.2
+sniffio==1.3.1
+h11==0.14.0
+starlette==0.41.3

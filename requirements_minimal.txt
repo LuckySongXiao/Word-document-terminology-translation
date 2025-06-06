@@ -1,0 +1,67 @@
+# 多格式文档翻译助手 - 最小依赖包
+# 核心Web框架
+fastapi
+uvicorn[standard]
+python-multipart
+websockets
+
+# AI和翻译相关
+openai
+ollama
+requests
+httpx
+
+# 文档处理
+python-docx
+PyMuPDF
+openpyxl
+PyPDF2
+pdf2image
+
+# 图像处理
+Pillow
+opencv-python
+
+# 数据处理
+pandas
+numpy
+jieba
+
+# 网络和HTTP
+aiohttp
+certifi
+aiofiles
+
+# 工具库
+pydantic
+jinja2
+click
+colorama
+tqdm
+
+# 打包相关
+pyinstaller
+pyinstaller-hooks-contrib
+
+# 其他必需依赖
+charset-normalizer
+idna
+urllib3
+six
+python-dateutil
+pytz
+setuptools
+wheel
+
+# Windows特定
+pywin32
+psutil
+chardet
+cryptography
+
+# 其他必要依赖
+typing-extensions
+anyio
+sniffio
+h11
+starlette

@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多格式文档翻译助手</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+</head>
+<body>
+    <div class="container mt-4">
+        <h1 class="text-center mb-4">多格式文档翻译助手</h1>
+
+        <!-- 翻译器设置 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>翻译器设置</h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <label class="form-label">翻译器类型:</label>
+                    </div>
+                    <div class="col-md-9">
+                        <div class="btn-group" role="group" id="translator-type">
+                            <input type="radio" class="btn-check" name="translator-type" id="zhipuai" autocomplete="off" value="zhipuai">
+                            <label class="btn btn-outline-primary" for="zhipuai">智谱AI</label>
+
+                            <input type="radio" class="btn-check" name="translator-type" id="ollama" autocomplete="off" value="ollama">
+                            <label class="btn btn-outline-primary" for="ollama">Ollama</label>
+
+                            <input type="radio" class="btn-check" name="translator-type" id="siliconflow" autocomplete="off" value="siliconflow">
+                            <label class="btn btn-outline-primary" for="siliconflow">硅基流动</label>
+
+                            <input type="radio" class="btn-check" name="translator-type" id="intranet" autocomplete="off" value="intranet">
+                            <label class="btn btn-outline-primary" for="intranet">内网OPENAI</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <label class="form-label">模型选择:</label>
+                    </div>
+                    <div class="col-md-9">
+                        <select class="form-select" id="model-select">
+                            <option value="">加载中...</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-12">
+                        <button class="btn btn-primary btn-icon" id="check-status-btn">
+                            <i class="bi bi-check-circle"></i> 检查翻译服务状态
+                        </button>
+                        <div class="mt-2 p-2 border rounded bg-light" id="status-container">
+                            <div class="d-flex flex-wrap">
+                                <div class="me-3 mb-1">
+                                    <i class="bi bi-circle-fill text-secondary"></i>
+                                    <span id="zhipuai-status">智谱AI: 未检查</span>
+                                </div>
+                                <div class="me-3 mb-1">
+                                    <i class="bi bi-circle-fill text-secondary"></i>
+                                    <span id="ollama-status">Ollama: 未检查</span>
+                                </div>
+                                <div class="me-3 mb-1">
+                                    <i class="bi bi-circle-fill text-secondary"></i>
+                                    <span id="siliconflow-status">硅基流动: 未检查</span>
+                                </div>
+                                <div class="me-3 mb-1">
+                                    <i class="bi bi-circle-fill text-secondary"></i>
+                                    <span id="intranet-status">内网OPENAI: 未检查</span>
+                                </div>
+                            </div>
+                            <div class="mt-1">
+                                <small class="text-muted" id="status-indicator">点击上方按钮检查翻译服务状态</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 文件上传和翻译 -->
+        <div class="card mb-4">
+            <div class="card-header bg-success bg-opacity-10">
+                <h5><i class="bi bi-translate"></i> 文档翻译</h5>
+            </div>
+            <div class="card-body">
+                <form id="translation-form">
+                    <div class="mb-3">
+                        <label for="file-upload" class="form-label">
+                            <i class="bi bi-file-earmark-text"></i> 选择文件:
+                        </label>
+                        <div class="input-group">
+                            <input class="form-control" type="file" id="file-upload" required>
+                            <span class="input-group-text bg-light">
+                                <small class="text-muted">支持 .docx, .pdf, .xlsx, .xls 等格式</small>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-5">
+                            <label for="source-lang" class="form-label">
+                                <i class="bi bi-box-arrow-in-right"></i> 源语言:
+                            </label>
+                            <select class="form-select" id="source-lang">
+                                <option value="auto">自动检测</option>
+                                <option value="en">英语</option>
+                                <option value="zh">中文</option>
+                                <option value="ja">日语</option>
+                                <option value="ko">韩语</option>
+                                <option value="fr">法语</option>
+                                <option value="de">德语</option>
+                                <option value="es">西班牙语</option>
+                                <option value="ru">俄语</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-2 d-flex align-items-end justify-content-center mb-2">
+                            <div class="translation-direction-indicator">
+                                <i class="bi bi-arrow-right fs-3"></i>
+                                <div id="translation-direction" class="badge bg-info mt-1">中文→外语</div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-5">
+                            <label for="target-lang" class="form-label">
+                                <i class="bi bi-box-arrow-right"></i> 目标语言:
+                            </label>
+                            <select class="form-select" id="target-lang">
+                                <option value="zh">中文</option>
+                                <option value="en">英语</option>
+                                <option value="ja">日语</option>
+                                <option value="ko">韩语</option>
+                                <option value="fr">法语</option>
+                                <option value="de">德语</option>
+                                <option value="es">西班牙语</option>
+                                <option value="ru">俄语</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="use-terminology" checked>
+                        <label class="form-check-label" for="use-terminology">
+                            <i class="bi bi-book"></i> 使用术语库
+                            <small class="text-muted ms-2">关闭后将使用更自然的翻译风格</small>
+                        </label>
+                    </div>
+
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="preprocess-terms">
+                        <label class="form-check-label" for="preprocess-terms">
+                            <i class="bi bi-gear-wide-connected"></i> 使用术语预处理
+                            <small class="text-muted ms-2">先检测文本中的术语并替换，再进行翻译</small>
+                        </label>
+                    </div>
+
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="export-pdf">
+                        <label class="form-check-label" for="export-pdf">
+                            <i class="bi bi-file-earmark-pdf"></i> 导出PDF文件
+                            <small class="text-muted ms-2">同时将翻译结果导出为PDF格式</small>
+                        </label>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label"><i class="bi bi-layout-text-window"></i> 输出格式:</label>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="output-format" id="bilingual" value="bilingual" checked>
+                            <label class="form-check-label" for="bilingual">双语对照</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="output-format" id="translation-only" value="translation_only">
+                            <label class="form-check-label" for="translation-only">仅翻译结果</label>
+                        </div>
+                        <small class="text-muted d-block">双语对照会同时显示原文和译文，仅翻译结果只保留译文</small>
+                    </div>
+
+                    <div class="d-flex align-items-center">
+                        <button type="submit" class="btn btn-success btn-icon" id="start-translation-btn">
+                            <i class="bi bi-play-fill"></i> 开始翻译
+                        </button>
+                        <div class="ms-3">
+                            <span id="translation-status" class="badge bg-secondary" style="display: inline-block;">
+                                <i class="bi bi-hourglass-split"></i> 准备中...
+                            </span>
+                        </div>
+                        <!-- 临时测试按钮 -->
+                        <div class="ms-2">
+                            <button type="button" class="btn btn-sm btn-outline-info" onclick="testTranslationStatus('submitting')" title="测试状态显示">
+                                <i class="bi bi-gear"></i> 测试状态
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 翻译任务列表 -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center bg-info bg-opacity-10">
+                <h5 class="mb-0"><i class="bi bi-list-task"></i> 翻译任务</h5>
+                <button class="btn btn-sm btn-outline-secondary btn-icon" id="refresh-tasks">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th><i class="bi bi-file-earmark"></i> 文件名</th>
+                                <th><i class="bi bi-info-circle"></i> 状态</th>
+                                <th><i class="bi bi-bar-chart-line"></i> 进度</th>
+                                <th><i class="bi bi-gear"></i> 操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tasks-table-body">
+                            <tr>
+                                <td colspan="4" class="text-center">
+                                    <div class="py-3">
+                                        <i class="bi bi-inbox text-muted" style="font-size: 2rem;"></i>
+                                        <p class="mt-2 text-muted">暂无任务</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 系统日志 -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center bg-dark bg-opacity-10">
+                <h5 class="mb-0"><i class="bi bi-terminal"></i> 系统日志</h5>
+                <div>
+                    <button class="btn btn-sm btn-outline-secondary btn-icon" id="clear-logs">
+                        <i class="bi bi-trash"></i> 清空
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary btn-icon ms-1" id="toggle-auto-scroll">
+                        <i class="bi bi-arrow-down-circle"></i> 自动滚动
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div id="system-log" class="log-container p-3" style="height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; background-color: #f8f9fa; color: #212529;">
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-terminal" style="font-size: 2rem;"></i>
+                        <p class="mt-2">系统日志将在此处显示</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 术语库管理 -->
+        <div class="card mb-4">
+            <div class="card-header bg-primary bg-opacity-10">
+                <h5><i class="bi bi-book"></i> 术语库管理</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <button class="btn btn-primary btn-icon" id="load-terminology">
+                        <i class="bi bi-cloud-download"></i> 加载术语库
+                    </button>
+                    <button class="btn btn-success btn-icon ms-2" id="save-terminology">
+                        <i class="bi bi-cloud-upload"></i> 保存术语库
+                    </button>
+                    <button class="btn btn-outline-primary btn-icon ms-2" id="export-terminology">
+                        <i class="bi bi-file-earmark-excel"></i> 导出Excel
+                    </button>
+                    <button class="btn btn-outline-secondary btn-icon ms-2" id="import-terminology">
+                        <i class="bi bi-file-earmark-excel"></i> 导入Excel
+                    </button>
+                </div>
+
+                <div id="terminology-editor" class="border p-3 rounded">
+                    <div class="d-flex justify-content-center align-items-center py-5">
+                        <div class="text-center">
+                            <i class="bi bi-book text-muted" style="font-size: 2rem;"></i>
+                            <p class="mt-2 text-muted">点击"加载术语库"按钮查看和编辑术语</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="text-center text-muted mb-4">
+            <p>多格式文档翻译助手 &copy; 2023-2024</p>
+        </footer>
+    </div>
+
+    <!-- 引入JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/main.js"></script>
+</body>
+</html>

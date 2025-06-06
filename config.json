@@ -1,0 +1,47 @@
+{
+    "primary_translator": {
+        "type": "zhipuai",
+        "api_key": "",
+        "model": "glm-4-flash",
+        "temperature": 0.3
+    },
+    "fallback_translator": {
+        "type": "ollama",
+        "model": "qwen2.5:14b",
+        "api_url": "https://50844s9656.wocp.fun",
+        "available_models": [
+            "mollysama/rwkv-7-g1:0.4B",
+            "qwen2.5:14b",
+            "phi4:latest",
+            "qwen:7b",
+            "deepseek-r1:8b"
+        ],
+        "model_list_timeout": 10.0,
+        "translate_timeout": 60.0
+    },
+    "siliconflow_translator": {
+        "type": "siliconflow",
+        "api_key": "",
+        "model": "deepseek-ai/DeepSeek-R1",
+        "timeout": 60.0
+    },
+    "intranet_translator": {
+        "type": "intranet",
+        "api_url": "http://192.168.100.71:8000/v1/chat/completions",
+        "model": "deepseek-r1-70b",
+        "timeout": 60.0
+    },
+    "current_translator_type": "zhipuai",
+    "zhipuai_translator": {
+        "type": "zhipuai",
+        "model": "glm-4-flash",
+        "temperature": 0.3,
+        "timeout": 60.0
+    },
+    "environment": {
+        "intranet_mode": false,
+        "offline_mode": false,
+        "skip_network_checks": false,
+        "description": "环境配置：intranet_mode=内网模式，offline_mode=离线模式，skip_network_checks=跳过网络检查"
+    }
+}

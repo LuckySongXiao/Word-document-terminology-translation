@@ -1,0 +1,37 @@
+# Python 虚拟环境
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# 依赖缓存
+.pytest_cache/
+.coverage
+coverage.xml
+
+# 本地配置
+.env
+*.env
+
+# 构建输出
+build/
+dist/
+outputs/
+test_output/
+build_temp/
+localpycs/
+
+# VSCode 配置
+.vscode/
+
+# Windows 系统文件
+Thumbs.db
+Desktop.ini
+
+# 日志文件
+*.log
+
+# 临时文件
+*.swp
+*.swo
+*.swn
