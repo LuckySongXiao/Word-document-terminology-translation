@@ -10,6 +10,7 @@ from .translator import TranslationService
 import pandas as pd
 from datetime import datetime
 from utils.term_extractor import TermExtractor
+from .translation_detector import TranslationDetector
 from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH as WD_ALIGN_PARAGRAPH
@@ -30,6 +31,8 @@ class PDFProcessor:
         self.use_terminology = True  # 默认使用术语库
         self.preprocess_terms = True  # 是否预处理术语（默认启用）
         self.term_extractor = TermExtractor()  # 术语提取器
+        self.translation_detector = TranslationDetector()  # 翻译检测器
+        self.skip_translated_content = True  # 是否跳过已翻译内容（默认启用）
         self.export_pdf = False  # 是否导出PDF
         self.output_format = "bilingual"  # 默认双语对照
         self.source_lang = "en"  # 默认源语言为英文
@@ -614,6 +617,22 @@ class PDFProcessor:
                         for para_idx, para_text in enumerate(batch_paragraphs):
                             global_idx = i + para_idx
                             self.web_logger.info(f"Translating paragraph {global_idx + 1}/{len(text_paragraphs)}")
+
+                            # 检查是否应该跳过翻译（已翻译内容检测）
+                            if self.skip_translated_content:
+                                should_skip, reason = self.translation_detector.should_skip_translation(
+                                    para_text, self.source_lang, self.target_lang
+                                )
+                                if should_skip:
+                                    logger.info(f"跳过PDF段落翻译: {reason} - {para_text[:50]}...")
+                                    self.web_logger.info(f"Skipping paragraph {global_idx + 1}: {reason}")
+                                    # 存储原文作为翻译结果
+                                    translated_paragraphs[global_idx] = {
+                                        'original': para_text,
+                                        'translated': para_text,  # 保持原文
+                                        'is_image_line': False
+                                    }
+                                    continue
 
                             # 检查段落是否是图片信息行（通常包含"图"、"Figure"等关键词）
                             is_image_line = False

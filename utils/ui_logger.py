@@ -416,3 +416,110 @@ def setup_ui_logger(root: tk.Tk) -> Tuple[tk.Text, Queue]:
         print(f"初始化日志消息失败: {e}")
 
     return log_text, message_queue
+
+def setup_console_logger():
+    """设置控制台日志处理器（用于Web服务器等无GUI环境）"""
+    # 增强的日志处理器，支持实时监控和异常捕获
+    class EnhancedFileHandler(logging.Handler):
+        def __init__(self):
+            super().__init__()
+            self.buffer = []
+            self.buffer_size = 50  # 减小缓冲区大小，更频繁地写入
+            self.buffer_lock = threading.Lock()
+            self.exception_count = 0
+            self.last_exception_time = 0
+            self.log_file = 'application.log'
+            self.realtime_log_file = 'realtime.log'
+
+            # 创建实时日志文件
+            try:
+                with open(self.realtime_log_file, 'w', encoding='utf-8') as f:
+                    f.write(f"=== 实时日志开始 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+            except Exception:
+                pass
+
+        def emit(self, record):
+            try:
+                # 格式化日志记录
+                log_entry = self.format(record)
+
+                # 立即写入到实时日志文件
+                try:
+                    with open(self.realtime_log_file, 'a', encoding='utf-8') as f:
+                        f.write(log_entry + '\n')
+                        f.flush()  # 立即刷新到磁盘
+                except Exception:
+                    pass
+
+                # 同时输出到控制台
+                try:
+                    print(log_entry)
+                    sys.stdout.flush()
+                except Exception:
+                    pass
+
+                # 添加到缓冲区
+                with self.buffer_lock:
+                    self.buffer.append(log_entry)
+                    if len(self.buffer) >= self.buffer_size:
+                        self.flush_buffer()
+
+            except Exception as e:
+                # 记录异常但不中断程序
+                current_time = time.time()
+                if current_time - self.last_exception_time > 60:  # 每分钟最多记录一次异常
+                    self.exception_count += 1
+                    self.last_exception_time = current_time
+                    try:
+                        print(f"日志处理异常 #{self.exception_count}: {str(e)}")
+                    except Exception:
+                        pass
+
+        def flush_buffer(self):
+            """刷新缓冲区到文件"""
+            if not self.buffer:
+                return
+
+            try:
+                with open(self.log_file, 'a', encoding='utf-8') as f:
+                    for entry in self.buffer:
+                        f.write(entry + '\n')
+                    f.flush()
+                self.buffer.clear()
+            except Exception:
+                pass
+
+    # 配置日志处理器
+    enhanced_file_handler = EnhancedFileHandler()
+    console_handler = logging.StreamHandler(sys.stdout)
+    file_handler = logging.handlers.RotatingFileHandler(
+        'application.log', maxBytes=1024*1024, backupCount=5, encoding='utf-8')
+
+    # 配置格式化器
+    formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(name)s:%(funcName)s:%(lineno)d - %(message)s',
+        '%Y-%m-%d %H:%M:%S')
+    enhanced_file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+    file_handler.setFormatter(formatter)
+
+    # 设置处理器的日志级别
+    enhanced_file_handler.setLevel(logging.DEBUG)
+    console_handler.setLevel(logging.INFO)
+    file_handler.setLevel(logging.WARNING)
+
+    # 获取根日志记录器并添加处理器
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    root_logger.addHandler(enhanced_file_handler)
+    root_logger.addHandler(console_handler)
+    root_logger.addHandler(file_handler)
+    root_logger.setLevel(logging.DEBUG)
+
+    # 存储增强处理器的引用，供外部访问
+    root_logger.enhanced_handler = enhanced_file_handler
+
+    # 返回根日志记录器
+    return root_logger

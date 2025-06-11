@@ -1,20 +1,66 @@
+// 文档术语翻译助手 - Web界面主脚本
+// 版本: 20250610-fix (修复checked属性设置错误)
+console.log('加载main.js - 版本: 20250610-fix');
+
 // 全局变量
 let autoScrollEnabled = true;  // 默认启用自动滚动
 let buttonStatusTimeout = null;  // 按钮状态恢复定时器
 
+// 全局错误处理
+window.addEventListener('error', function(event) {
+    console.error('全局JavaScript错误:', event.error);
+    console.error('错误位置:', event.filename, '行:', event.lineno, '列:', event.colno);
+
+    // 如果是设置checked属性的错误，提供更详细的信息
+    if (event.error && event.error.message && event.error.message.includes('setting \'checked\'')) {
+        console.error('检测到checked属性设置错误，这通常是因为尝试在null元素上设置属性');
+        console.error('请检查DOM元素是否存在且已正确加载');
+        console.error('已启用安全模式，错误已被捕获并处理');
+    }
+});
+
+// 全局Promise错误处理
+window.addEventListener('unhandledrejection', function(event) {
+    console.error('未处理的Promise拒绝:', event.reason);
+});
+
 // 页面加载完成后执行
 document.addEventListener('DOMContentLoaded', function() {
-    // 初始化WebSocket连接
-    initWebSocket();
+    // 添加页面初始化状态检查
+    console.log('DOM内容已加载，开始初始化... (版本: 20250610-fix)');
 
-    // 检查翻译器状态
-    checkTranslatorStatus();
+    // 延迟初始化，确保所有元素都已渲染
+    setTimeout(function() {
+        console.log('开始延迟初始化检查...');
 
-    // 加载任务列表
-    loadTasks();
+        // 检查关键元素是否存在
+        const criticalElements = [
+            'zhipuai', 'ollama', 'siliconflow', 'intranet',
+            'use-terminology', 'preprocess-terms', 'export-pdf', 'bilingual'
+        ];
 
-    // 自动加载术语库
-    loadTerminology();
+        const missingElements = criticalElements.filter(id => !document.getElementById(id));
+        if (missingElements.length > 0) {
+            console.warn('以下关键元素未找到:', missingElements);
+            console.warn('这可能是封装环境中的加载时序问题，将在后续操作中重试');
+        } else {
+            console.log('所有关键元素已就绪');
+        }
+
+        // 初始化WebSocket连接
+        initWebSocket();
+
+        // 初始化翻译器状态显示（不进行实际检测）
+        initTranslatorStatusDisplay();
+
+        // 加载任务列表
+        loadTasks();
+
+        // 自动加载术语库
+        loadTerminology();
+
+        console.log('页面初始化完成');
+    }, 500); // 延迟500ms确保DOM完全渲染
 
     // 绑定事件处理器
     document.getElementById('check-status-btn').addEventListener('click', checkTranslatorStatus);
@@ -22,6 +68,9 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('refresh-tasks').addEventListener('click', loadTasks);
     document.getElementById('load-terminology').addEventListener('click', loadTerminology);
     document.getElementById('save-terminology').addEventListener('click', saveTerminology);
+
+    // 绑定翻译器选择事件
+    bindTranslatorSelectionEvents();
 
     // 绑定语言选择事件，更新翻译方向指示器
     document.getElementById('source-lang').addEventListener('change', updateTranslationDirection);
@@ -133,6 +182,163 @@ document.addEventListener('DOMContentLoaded', function() {
     startExceptionMonitoring();
 });
 
+// 绑定翻译器选择事件
+function bindTranslatorSelectionEvents() {
+    const translatorTypes = ['zhipuai', 'ollama', 'siliconflow', 'intranet'];
+
+    translatorTypes.forEach(type => {
+        const element = document.getElementById(type);
+        if (element) {
+            element.addEventListener('change', function() {
+                if (this.checked) {
+                    console.log(`用户选择翻译器: ${type}`);
+                    setTranslatorType(type);
+                }
+            });
+            console.log(`已绑定 ${type} 翻译器选择事件`);
+        } else {
+            console.error(`未找到翻译器元素: ${type}`);
+        }
+    });
+}
+
+// 初始化翻译器状态显示（不进行实际检测）
+function initTranslatorStatusDisplay() {
+    const statusIndicator = document.getElementById('status-indicator');
+    statusIndicator.textContent = '点击"检查状态"按钮检测翻译服务';
+
+    // 设置初始状态为待检测
+    document.getElementById('zhipuai-status').textContent = '智谱AI: 待检测';
+    document.getElementById('ollama-status').textContent = 'Ollama: 待检测';
+    document.getElementById('siliconflow-status').textContent = '硅基流动: 待检测';
+    document.getElementById('intranet-status').textContent = '内网OPENAI: 待检测';
+
+    // 设置初始图标为灰色
+    document.querySelectorAll('#status-container .bi-circle-fill').forEach(icon => {
+        icon.className = 'bi bi-circle-fill text-secondary';
+    });
+
+    // 尝试获取当前选中的翻译器（如果有的话）
+    loadCurrentTranslator();
+}
+
+// 安全设置元素checked属性的辅助函数 (增强版)
+function safeSetChecked(elementId, checked = true, retryCount = 0) {
+    try {
+        console.log(`尝试设置元素 ${elementId} 的checked状态为: ${checked} (重试次数: ${retryCount})`);
+
+        const element = document.getElementById(elementId);
+        if (element && (element.type === 'radio' || element.type === 'checkbox')) {
+            element.checked = checked;
+            console.log(`✓ 成功设置元素 ${elementId} 的checked状态为: ${checked}`);
+            return true;
+        } else if (element) {
+            console.warn(`⚠ 元素 ${elementId} 存在但不是radio或checkbox类型: ${element.type}`);
+            console.warn(`元素详情:`, element);
+            return false;
+        } else {
+            console.warn(`⚠ 未找到元素: ${elementId}`);
+
+            // 在封装环境中，如果元素未找到且重试次数少于3次，则延迟重试
+            if (retryCount < 3) {
+                console.log(`将在500ms后重试设置元素 ${elementId}...`);
+                setTimeout(() => {
+                    safeSetChecked(elementId, checked, retryCount + 1);
+                }, 500);
+            } else {
+                console.error(`✗ 经过 ${retryCount} 次重试仍未找到元素: ${elementId}`);
+                // 列出当前页面所有radio和checkbox元素用于调试
+                const allInputs = document.querySelectorAll('input[type="radio"], input[type="checkbox"]');
+                console.log('当前页面所有radio/checkbox元素:', Array.from(allInputs).map(el => ({
+                    id: el.id,
+                    type: el.type,
+                    name: el.name,
+                    value: el.value
+                })));
+            }
+            return false;
+        }
+    } catch (error) {
+        console.error(`✗ 设置元素 ${elementId} 的checked属性时出错:`, error);
+        console.error('错误堆栈:', error.stack);
+        return false;
+    }
+}
+
+// 等待DOM元素可用的辅助函数
+function waitForElement(elementId, maxAttempts = 10, interval = 100) {
+    return new Promise((resolve) => {
+        let attempts = 0;
+
+        const checkElement = () => {
+            const element = document.getElementById(elementId);
+            if (element) {
+                resolve(element);
+                return;
+            }
+
+            attempts++;
+            if (attempts >= maxAttempts) {
+                console.warn(`等待元素 ${elementId} 超时，已尝试 ${attempts} 次`);
+                resolve(null);
+                return;
+            }
+
+            setTimeout(checkElement, interval);
+        };
+
+        checkElement();
+    });
+}
+
+// 加载当前翻译器设置（不检测连接状态）
+async function loadCurrentTranslator() {
+    try {
+        const response = await fetch('/api/translator/current');
+        const data = await response.json();
+
+        console.log('获取当前翻译器设置响应:', data);
+
+        if (data.success && data.current) {
+            console.log('尝试设置当前翻译器:', data.current);
+
+            // 等待DOM完全加载
+            await new Promise(resolve => {
+                if (document.readyState === 'complete') {
+                    resolve();
+                } else {
+                    window.addEventListener('load', resolve);
+                }
+            });
+
+            // 等待目标元素可用
+            const currentElement = await waitForElement(data.current, 20, 50);
+
+            if (currentElement) {
+                // 使用安全的方式设置checked属性
+                const success = safeSetChecked(data.current, true);
+                if (success) {
+                    console.log('成功设置翻译器选中状态:', data.current);
+                } else {
+                    console.error('设置翻译器选中状态失败:', data.current);
+                }
+            } else {
+                console.error('等待翻译器元素超时:', data.current);
+                // 列出所有可用的翻译器元素ID进行调试
+                const availableElements = ['zhipuai', 'ollama', 'siliconflow', 'intranet'].map(id => {
+                    const element = document.getElementById(id);
+                    return `${id}: ${element ? `存在(${element.type})` : '不存在'}`;
+                });
+                console.log('可用的翻译器元素:', availableElements);
+            }
+        } else {
+            console.log('获取当前翻译器设置失败或无当前翻译器:', data.message || '未知原因');
+        }
+    } catch (error) {
+        console.error('获取当前翻译器设置失败:', error);
+    }
+}
+
 // 检查翻译器状态
 async function checkTranslatorStatus() {
     const statusIndicator = document.getElementById('status-indicator');
@@ -153,8 +359,26 @@ async function checkTranslatorStatus() {
         const response = await fetch('/api/translators');
         const data = await response.json();
 
-        // 更新翻译器选择状态
-        document.getElementById(data.current).checked = true;
+        // 更新翻译器选择状态（使用安全检查）
+        if (data.current) {
+            console.log('检查状态时尝试设置当前翻译器:', data.current);
+
+            // 使用安全的方式设置checked属性
+            const success = safeSetChecked(data.current, true);
+            if (success) {
+                console.log('检查状态时成功设置翻译器选中状态:', data.current);
+            } else {
+                console.error('检查状态时设置翻译器选中状态失败:', data.current);
+                // 列出所有可用的翻译器元素ID进行调试
+                const availableElements = ['zhipuai', 'ollama', 'siliconflow', 'intranet'].map(id => {
+                    const element = document.getElementById(id);
+                    return `${id}: ${element ? `存在(${element.type})` : '不存在'}`;
+                });
+                console.log('可用的翻译器元素:', availableElements);
+            }
+        } else {
+            console.log('检查状态时无当前翻译器设置');
+        }
 
         // 更新可用状态
         let availableCount = 0;
@@ -191,13 +415,33 @@ async function checkTranslatorStatus() {
         // 加载模型列表
         loadModels();
     } catch (error) {
-        statusIndicator.textContent = '检查失败: ' + error.message;
+        console.error('检查翻译器状态失败:', error);
 
-        // 更新状态为错误
-        document.getElementById('zhipuai-status').textContent = '智谱AI: 检查失败';
-        document.getElementById('ollama-status').textContent = 'Ollama: 检查失败';
-        document.getElementById('siliconflow-status').textContent = '硅基流动: 检查失败';
-        document.getElementById('intranet-status').textContent = '内网OPENAI: 检查失败';
+        // 检查是否是翻译服务未初始化的错误
+        if (error.message && error.message.includes('翻译服务尚未初始化')) {
+            statusIndicator.textContent = '翻译服务初始化失败，请检查配置文件和API密钥';
+
+            // 更新状态为初始化失败
+            document.getElementById('zhipuai-status').textContent = '智谱AI: 初始化失败';
+            document.getElementById('ollama-status').textContent = 'Ollama: 初始化失败';
+            document.getElementById('siliconflow-status').textContent = '硅基流动: 初始化失败';
+            document.getElementById('intranet-status').textContent = '内网OPENAI: 初始化失败';
+
+            // 显示详细的错误提示
+            addSystemLog('翻译服务初始化失败，可能的原因：', 'error');
+            addSystemLog('1. API密钥未配置或配置错误', 'error');
+            addSystemLog('2. 网络连接问题', 'error');
+            addSystemLog('3. 配置文件格式错误', 'error');
+            addSystemLog('请检查API_config目录下的配置文件', 'error');
+        } else {
+            statusIndicator.textContent = '检查失败: ' + error.message;
+
+            // 更新状态为错误
+            document.getElementById('zhipuai-status').textContent = '智谱AI: 检查失败';
+            document.getElementById('ollama-status').textContent = 'Ollama: 检查失败';
+            document.getElementById('siliconflow-status').textContent = '硅基流动: 检查失败';
+            document.getElementById('intranet-status').textContent = '内网OPENAI: 检查失败';
+        }
     }
 }
 
@@ -215,6 +459,15 @@ function getTranslatorName(type) {
 // 设置翻译器类型
 async function setTranslatorType(type) {
     try {
+        // 显示连接测试提示
+        addSystemLog(`正在测试${type}翻译器连接...`, 'info');
+
+        // 更新对应翻译器的状态为检测中
+        const statusElement = document.getElementById(`${type}-status`);
+        const iconElement = statusElement.previousElementSibling;
+        statusElement.textContent = `${getTranslatorName(type)}: 检测中...`;
+        iconElement.className = 'bi bi-circle-fill text-warning';
+
         const formData = new FormData();
         formData.append('translator_type', type);
 
@@ -223,15 +476,80 @@ async function setTranslatorType(type) {
             body: formData
         });
 
-        if (response.ok) {
-            // 加载对应的模型列表
+        const data = await response.json();
+
+        if (data.success) {
+            // 连接成功，加载对应的模型列表
+            addSystemLog(`${type}翻译器连接成功`, 'success');
+
+            // 更新状态为可用
+            const statusElement = document.getElementById(`${type}-status`);
+            const iconElement = statusElement.previousElementSibling;
+            statusElement.textContent = `${getTranslatorName(type)}: 可用`;
+            iconElement.className = 'bi bi-circle-fill text-success';
+
             loadModels();
+            // 不再调用 loadTranslators()，避免重复检测
         } else {
-            const data = await response.json();
-            alert('设置翻译器失败: ' + data.detail);
+            // 连接失败
+            addSystemLog(`${type}翻译器连接失败: ${data.message}`, 'error');
+
+            // 更新状态为不可用
+            const statusElement = document.getElementById(`${type}-status`);
+            const iconElement = statusElement.previousElementSibling;
+            statusElement.textContent = `${getTranslatorName(type)}: 不可用`;
+            iconElement.className = 'bi bi-circle-fill text-danger';
+
+            // 如果有备用翻译器可用，询问用户是否切换
+            if (data.fallback_available && data.fallback_type === 'ollama') {
+                const userConfirm = confirm(
+                    `${type}翻译器连接失败。\n\n` +
+                    `检测到本地Ollama模型可用，是否切换到Ollama翻译器？\n\n` +
+                    `点击"确定"切换到Ollama，点击"取消"保持当前设置。`
+                );
+
+                if (userConfirm) {
+                    await switchToFallback();
+                }
+            } else {
+                alert(`${type}翻译器连接失败: ${data.message}`);
+            }
         }
     } catch (error) {
+        addSystemLog(`设置翻译器出错: ${error.message}`, 'error');
+
+        // 更新状态为检测失败
+        const statusElement = document.getElementById(`${type}-status`);
+        const iconElement = statusElement.previousElementSibling;
+        statusElement.textContent = `${getTranslatorName(type)}: 检测失败`;
+        iconElement.className = 'bi bi-circle-fill text-danger';
+
         alert('设置翻译器出错: ' + error.message);
+    }
+}
+
+// 切换到备用翻译器
+async function switchToFallback() {
+    try {
+        addSystemLog('正在切换到Ollama翻译器...', 'info');
+
+        const response = await fetch('/api/translator/fallback', {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            addSystemLog('已成功切换到Ollama翻译器', 'success');
+            loadModels(); // 重新加载模型列表
+            checkTranslatorStatus(); // 刷新翻译器状态
+        } else {
+            addSystemLog(`切换到Ollama失败: ${data.message}`, 'error');
+            alert(`切换到Ollama失败: ${data.message}`);
+        }
+    } catch (error) {
+        addSystemLog(`切换翻译器出错: ${error.message}`, 'error');
+        alert('切换翻译器出错: ' + error.message);
     }
 }
 
@@ -923,6 +1241,7 @@ async function submitTranslation(event) {
     const targetLang = document.getElementById('target-lang').value;
     const useTerminology = document.getElementById('use-terminology').checked;
     const preprocessTerms = document.getElementById('preprocess-terms').checked;
+    const skipTranslatedContent = document.getElementById('skip-translated-content').checked;
     const exportPdf = document.getElementById('export-pdf').checked;
     const outputFormat = document.querySelector('input[name="output-format"]:checked').value;
 
@@ -949,6 +1268,7 @@ async function submitTranslation(event) {
     formData.append('target_lang', targetLang);
     formData.append('use_terminology', useTerminology);
     formData.append('preprocess_terms', preprocessTerms);
+    formData.append('skip_translated_content', skipTranslatedContent);
     formData.append('export_pdf', exportPdf);
     formData.append('output_format', outputFormat);
     formData.append('client_id', clientId);  // 添加客户端ID
@@ -981,11 +1301,11 @@ async function submitTranslation(event) {
             // 重置表单
             document.getElementById('translation-form').reset();
 
-            // 恢复默认选项
-            document.getElementById('use-terminology').checked = true;
-            document.getElementById('preprocess-terms').checked = false;
-            document.getElementById('export-pdf').checked = false;
-            document.getElementById('bilingual').checked = true;
+            // 恢复默认选项（使用安全方式）
+            safeSetChecked('use-terminology', true);
+            safeSetChecked('preprocess-terms', false);
+            safeSetChecked('export-pdf', false);
+            safeSetChecked('bilingual', true);
 
             // 刷新任务列表
             loadTasks();

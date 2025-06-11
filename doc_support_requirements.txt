@@ -1,0 +1,15 @@
+# DOC文档支持所需的额外依赖包
+
+# DOC文件处理支持
+docx2txt>=0.8
+python-docx>=1.1.0
+
+# Windows COM接口支持（仅Windows系统）
+pywin32>=305.1
+
+# 可选：更好的文档处理支持
+python-magic>=0.4.27
+chardet>=5.2.0
+
+# 安装说明：
+# pip install docx2txt python-docx pywin32

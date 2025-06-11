@@ -8,6 +8,7 @@ from .translator import TranslationService
 import pandas as pd
 from datetime import datetime
 from utils.term_extractor import TermExtractor
+from .translation_detector import TranslationDetector
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
@@ -30,6 +31,8 @@ class PPTProcessor:
         self.use_terminology = True  # 默认使用术语库
         self.preprocess_terms = True  # 是否预处理术语（默认启用）
         self.term_extractor = TermExtractor()  # 术语提取器
+        self.translation_detector = TranslationDetector()  # 翻译检测器
+        self.skip_translated_content = True  # 是否跳过已翻译内容（默认启用）
         self.export_pdf = False  # 是否导出PDF
         self.output_format = "bilingual"  # 默认双语对照
         self.source_lang = "zh"  # 默认源语言为中文
@@ -269,6 +272,15 @@ class PPTProcessor:
         if not original_text:
             return
 
+        # 检查是否应该跳过翻译（已翻译内容检测）
+        if self.skip_translated_content:
+            should_skip, reason = self.translation_detector.should_skip_translation(
+                original_text, self.source_lang, self.target_lang
+            )
+            if should_skip:
+                logger.info(f"跳过PPT文本形状翻译: {reason} - {original_text[:50]}...")
+                return
+
         # 检查文本中是否包含数学公式
         text, formulas = self._extract_latex_formulas(original_text)
 
@@ -393,6 +405,15 @@ class PPTProcessor:
                 original_text = cell.text.strip()
                 if not original_text:
                     continue
+
+                # 检查是否应该跳过翻译（已翻译内容检测）
+                if self.skip_translated_content:
+                    should_skip, reason = self.translation_detector.should_skip_translation(
+                        original_text, self.source_lang, self.target_lang
+                    )
+                    if should_skip:
+                        logger.info(f"跳过PPT表格单元格翻译: {reason} - {original_text[:50]}...")
+                        continue
 
                 # 检查文本中是否包含数学公式
                 text, formulas = self._extract_latex_formulas(original_text)

@@ -143,7 +143,6 @@
     "光圈异常": "Flower",
     "零位错": "Zero-Dislocation",
     "提断/取段/工艺里面取晶": "Pop out (P/O)",
-    "指这个晶棒本身可以拉4-5m。 但是拉到2米，就把它拿出来。（半导体炉会涉及到的工艺）-未达目标长度提前取晶": "Section Pulling",
     "复投熔料": "Remelt: Recycle Poly",
     "吊多晶": "Pulling for Remelt (PFRM)",
     "小于直径": "Under Dia",
@@ -161,7 +160,8 @@
     "摆幅": "Wobble?amplitude?",
     "馈通/导线": "Feed-through",
     "热电偶": "Thermocouple",
-    "煅烧": "Bake out"
+    "煅烧": "Bake out",
+    "中断提出": "Section Pulling"
   },
   "日语": {},
   "韩语": {},

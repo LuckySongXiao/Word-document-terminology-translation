@@ -1,0 +1,32 @@
+文件制订/修订申请单
+Documentation/Revision Application Form
+
+申请状态：首次发行 修订 废止  
+Application state: Initial issue Revision Obsolete
+
+文件类型：手册 程序文件 三阶文件 技术文件 图纸 外来文件 表单
+Document types: Manual Procedure Work InstructionTechnical Document Drawings External Document Form
+
+分发基地:新疆其他                     
+Distribution base: XJ Other
+
+这是一段需要翻译的纯中文内容，没有任何英文对照。
+它包含多个句子，应该被识别为需要翻译的内容。
+
+产品名称(Product Name)
+版本号(Version Number)
+
+【原文】这是标记格式的原文
+【译文】This is the marked translation
+
+原文：这是另一种标记格式
+译文：This is another marking format
+
+123
+45.67%
+ABC123
+https://www.example.com
+user@example.com
+
+This is pure English content that should be translated to Chinese.
+It contains multiple sentences and should be identified as content needing translation.

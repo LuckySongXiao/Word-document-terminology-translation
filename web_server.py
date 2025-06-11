@@ -9,40 +9,69 @@ import sys
 from web.api import app
 from utils.terminology import load_terminology
 from services.translator import TranslationService
+from utils.ui_logger import setup_console_logger
 
-# 简化的日志配置，避免冲突
+# 设置实时日志系统
 def setup_logging():
-    """设置简化的日志配置"""
-    # 清除所有现有的处理器
-    root_logger = logging.getLogger()
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
+    """设置实时日志配置，支持终端控制台和Web界面同步显示"""
+    try:
+        # 使用控制台日志系统，支持实时日志文件
+        root_logger = setup_console_logger()
 
-    # 创建简单的控制台处理器
-    console_handler = logging.StreamHandler(sys.stdout)
-    formatter = logging.Formatter(
-        '[%(asctime)s] %(levelname)s: %(message)s',
-        datefmt='%H:%M:%S'
-    )
-    console_handler.setFormatter(formatter)
-    console_handler.setLevel(logging.INFO)
+        # 禁用uvicorn的默认日志配置，避免冲突
+        logging.getLogger("uvicorn").handlers.clear()
+        logging.getLogger("uvicorn.access").handlers.clear()
+        logging.getLogger("uvicorn.error").handlers.clear()
 
-    # 配置根日志记录器
-    root_logger.setLevel(logging.INFO)
-    root_logger.addHandler(console_handler)
+        return logging.getLogger(__name__)
+    except Exception as e:
+        # 如果控制台日志系统失败，使用简化的控制台日志
+        print(f"控制台日志系统初始化失败，使用简化日志: {e}")
 
-    # 禁用uvicorn的默认日志配置
-    logging.getLogger("uvicorn").handlers.clear()
-    logging.getLogger("uvicorn.access").handlers.clear()
+        # 清除所有现有的处理器
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
 
-    return logging.getLogger(__name__)
+        # 创建简单的控制台处理器
+        console_handler = logging.StreamHandler(sys.stdout)
+        formatter = logging.Formatter(
+            '[%(asctime)s] %(levelname)s: %(message)s',
+            datefmt='%H:%M:%S'
+        )
+        console_handler.setFormatter(formatter)
+        console_handler.setLevel(logging.DEBUG)  # 改为DEBUG级别
+
+        # 配置根日志记录器
+        root_logger.setLevel(logging.DEBUG)  # 改为DEBUG级别
+        root_logger.addHandler(console_handler)
+
+        return logging.getLogger(__name__)
 
 # 设置日志
 logger = setup_logging()
 
+# 同时创建web_server日志记录器，确保与WebSocket处理器配置一致
+web_server_logger = logging.getLogger('web_server')
+web_server_logger.setLevel(logging.INFO)
+
 # 创建全局翻译服务实例
 # 注意：在主程序中初始化，避免在导入时初始化
 translator = None
+
+def find_available_port(start_port: int, max_attempts: int = 10) -> int:
+    """查找可用端口"""
+    import socket
+
+    for port in range(start_port, start_port + max_attempts):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('0.0.0.0', port))
+                return port
+        except OSError:
+            continue
+
+    raise RuntimeError(f"无法在端口范围 {start_port}-{start_port + max_attempts - 1} 内找到可用端口")
 
 def open_browser(host, port):
     """在新线程中打开浏览器"""
@@ -69,84 +98,80 @@ def main():
     parser.add_argument('--no-browser', action='store_true', help='不自动打开浏览器')
     args = parser.parse_args()
 
-    # 记录系统信息
+    # 查找可用端口
+    try:
+        actual_port = find_available_port(args.port)
+        if actual_port != args.port:
+            logger.info(f"端口 {args.port} 被占用，自动切换到端口 {actual_port}")
+            web_server_logger.info(f"端口 {args.port} 被占用，自动切换到端口 {actual_port}")
+    except RuntimeError as e:
+        logger.error(str(e))
+        web_server_logger.error(str(e))
+        sys.exit(1)
+
+    # 记录系统信息（同时使用两个日志记录器确保同步）
     logger.info("=" * 50)
+    web_server_logger.info("=" * 50)
     logger.info("多格式文档翻译助手 - Web服务器启动")
+    web_server_logger.info("多格式文档翻译助手 - Web服务器启动")
     logger.info("=" * 50)
+    web_server_logger.info("=" * 50)
     logger.info(f"系统信息: Python {sys.version}")
+    web_server_logger.info(f"系统信息: Python {sys.version}")
     logger.info(f"操作系统: {sys.platform}")
+    web_server_logger.info(f"操作系统: {sys.platform}")
     logger.info(f"工作目录: {os.getcwd()}")
+    web_server_logger.info(f"工作目录: {os.getcwd()}")
     logger.info("-" * 50)
+    web_server_logger.info("-" * 50)
 
     # 初始化翻译服务
     try:
         logger.info("正在初始化翻译服务...")
+        web_server_logger.info("正在初始化翻译服务...")
+
         # 在打包环境中，需要确保工作目录正确
         if hasattr(sys, '_MEIPASS'):
             # PyInstaller打包环境
+            logger.info(f"检测到PyInstaller环境，_MEIPASS: {sys._MEIPASS}")
+            logger.info(f"当前工作目录: {os.getcwd()}")
             os.chdir(sys._MEIPASS)
+            logger.info(f"切换工作目录到: {os.getcwd()}")
 
+        # 设置翻译服务的日志级别为DEBUG
+        import logging
+        logging.getLogger('services.translator').setLevel(logging.DEBUG)
+        logging.getLogger('services').setLevel(logging.DEBUG)
+
+        logger.info("开始创建TranslationService实例...")
         translator = TranslationService()
+        logger.info("TranslationService实例创建完成")
+
         # 将翻译服务实例传递给API模块
         from web.api import set_translator_instance
         set_translator_instance(translator)
         logger.info("翻译服务初始化成功")
+        web_server_logger.info("翻译服务初始化成功")
     except Exception as e:
+        import traceback
         logger.error(f"翻译服务初始化失败: {str(e)}")
+        logger.error(f"详细错误信息: {traceback.format_exc()}")
+        web_server_logger.error(f"翻译服务初始化失败: {str(e)}")
         logger.error("将继续启动服务器，但翻译功能可能不可用")
+        web_server_logger.error("将继续启动服务器，但翻译功能可能不可用")
         translator = None
 
-    # 检查翻译服务状态
+    # 翻译服务状态检查（延迟到用户选择时进行）
     if translator:
         try:
-            # 检测是否为内网环境
-            is_intranet = translator._detect_intranet_environment()
-            if is_intranet:
-                logger.info("检测到内网环境，跳过外部API连接检查")
-
-            # 检查智谱AI服务
-            try:
-                zhipuai_available = translator._check_zhipuai_available(skip_network_check=is_intranet)
-                logger.info(f"智谱AI服务状态: {'可用' if zhipuai_available else '不可用'}")
-            except Exception as e:
-                logger.error(f"检查智谱AI服务状态失败: {str(e)}")
-                logger.warning("智谱AI服务检查失败，将其标记为不可用")
-                zhipuai_available = False
-
-                # 如果智谱AI不可用，确保切换到Ollama模式
-                if hasattr(translator, 'use_fallback'):
-                    translator.use_fallback = True
-                    logger.info("已自动切换到Ollama模式")
-
-            # 检查Ollama服务
-            try:
-                ollama_available = translator._check_ollama_available()
-                logger.info(f"Ollama服务状态: {'可用' if ollama_available else '不可用'}")
-            except Exception as e:
-                logger.error(f"检查Ollama服务状态失败: {str(e)}")
-                ollama_available = False
-
-            # 检查硅基流动服务
-            try:
-                siliconflow_available = translator.check_siliconflow_service()
-                logger.info(f"硅基流动服务状态: {'可用' if siliconflow_available else '不可用'}")
-            except Exception as e:
-                logger.error(f"检查硅基流动服务状态失败: {str(e)}")
-                siliconflow_available = False
-
-            # 内网服务不进行前置检查，仅在用户选择时检测
-            logger.info("内网翻译器已配置，将在用户选择时进行连接检测")
-
-            # 记录当前使用的模型
-            try:
-                current_model = translator.get_current_model()
-                logger.info(f"当前使用的模型: {current_model}")
-            except Exception as e:
-                logger.error(f"获取当前模型失败: {str(e)}")
-
+            # 获取当前使用的模型
+            current_model = translator.get_current_model()
+            logger.info(f"当前配置的模型: {current_model}")
+            logger.info("翻译服务已初始化，连接测试将在用户选择平台时进行")
             logger.info("-" * 50)
+
         except Exception as e:
-            logger.error(f"检查翻译服务状态失败: {str(e)}")
+            logger.error(f"获取翻译服务信息时发生错误: {str(e)}")
             logger.error("将继续启动服务器，但部分翻译功能可能不可用")
 
     # 预加载术语库
@@ -167,22 +192,27 @@ def main():
 
     # 启动浏览器线程
     if not args.no_browser:
-        threading.Thread(target=open_browser, args=(args.host, args.port), daemon=True).start()
+        threading.Thread(target=open_browser, args=(args.host, actual_port), daemon=True).start()
 
     # 启动服务器
-    logger.info(f"启动Web服务器，地址: http://{args.host}:{args.port}")
+    logger.info(f"启动Web服务器，地址: http://{args.host}:{actual_port}")
     logger.info("=" * 50)
 
     # 添加日志记录，确保这些信息能够被前端捕获
     logger.info("Web服务器已启动，等待客户端连接...")
+    web_server_logger.info("Web服务器已启动，等待客户端连接...")
     logger.info("系统日志将在此处实时显示")
+    web_server_logger.info("系统日志将在此处实时显示")
 
     # 记录一些重要的系统信息，这些信息会被发送到前端
     logger.info(f"术语库状态: {'已加载' if terminology else '未加载或为空'}")
+    web_server_logger.info(f"术语库状态: {'已加载' if terminology else '未加载或为空'}")
     logger.info(f"翻译服务状态: {'已初始化' if translator else '未初始化'}")
+    web_server_logger.info(f"翻译服务状态: {'已初始化' if translator else '未初始化'}")
 
     # 确保日志同步到终端和Web界面
     logger.info("日志系统已配置完成，终端控制台和Web界面将实时同步显示系统日志")
+    web_server_logger.info("日志系统已配置完成，终端控制台和Web界面将实时同步显示系统日志")
 
     # 启动服务器
     try:
@@ -190,7 +220,7 @@ def main():
         config = uvicorn.Config(
             app,
             host=args.host,
-            port=args.port,
+            port=actual_port,
             reload=args.reload,
             log_level="error",  # 降低uvicorn日志级别
             access_log=False,   # 禁用访问日志

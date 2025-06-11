@@ -36,6 +36,14 @@ class DocumentProcessorFactory:
         if ext == '.docx':
             logger.info(f"创建Word文档处理器，文件: {file_path}")
             return DocumentProcessor(translator)
+        elif ext == '.doc':
+            logger.info(f"创建DOC文档处理器，文件: {file_path}")
+            from .doc_processor import DOCProcessor
+            return DOCProcessor(translator)
+        elif ext == '.txt':
+            logger.info(f"创建TXT文档处理器，文件: {file_path}")
+            from .txt_processor import TXTProcessor
+            return TXTProcessor(translator)
         elif ext == '.pdf':
             logger.info(f"创建PDF文档处理器，文件: {file_path}")
             return PDFProcessor(translator)
@@ -44,6 +52,6 @@ class DocumentProcessorFactory:
             from .excel_processor import ExcelProcessor
             return ExcelProcessor(translator)
         else:
-            supported_formats = ".docx, .pdf, .xlsx, .xls"
+            supported_formats = ".docx, .doc, .txt, .pdf, .xlsx, .xls"
             logger.error(f"不支持的文件类型: {ext}")
             raise ValueError(f"不支持的文件类型: {ext}，目前仅支持{supported_formats}文件")

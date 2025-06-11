@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Dict, List, Any
 import re
 from utils.term_extractor import TermExtractor
+from .translation_detector import TranslationDetector
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,8 @@ class ExcelProcessor:
         """
         self.translator = translator
         self.term_extractor = TermExtractor()
+        self.translation_detector = TranslationDetector()  # 翻译检测器
+        self.skip_translated_content = True  # 是否跳过已翻译内容（默认启用）
         self.source_lang = "zh"
         self.target_lang = "en"
         self.is_cn_to_foreign = True
@@ -297,49 +300,25 @@ class ExcelProcessor:
 
     def _should_skip_cell(self, text: str) -> bool:
         """判断是否应该跳过翻译的单元格"""
-        # 跳过空白或仅包含空格的文本
-        if not text or not text.strip():
+        # 如果禁用了跳过已翻译内容功能，只进行基本检查
+        if not self.skip_translated_content:
+            # 只跳过明显的非文本内容（数字、公式等）
+            should_skip, reason = self.translation_detector.should_skip_translation(text, self.source_lang, self.target_lang)
+            if should_skip and any(keyword in reason for keyword in ["纯数字", "代码", "URL", "邮箱", "公式"]):
+                logger.debug(f"跳过Excel非文本内容: {reason} - {text[:30]}...")
+                return True
+            return False
+
+        # 使用新的翻译检测器
+        should_skip, reason = self.translation_detector.should_skip_translation(text, self.source_lang, self.target_lang)
+        if should_skip:
+            logger.debug(f"跳过Excel单元格翻译: {reason} - {text[:30]}...")
             return True
 
-        # 跳过纯数字（包括小数、负数、百分比等）
-        clean_text = text.replace(',', '').replace(' ', '').replace('%', '')
-        if clean_text.replace('.', '').replace('-', '').replace('+', '').isdigit():
-            return True
-
+        # Excel特有的跳过条件
         # 跳过公式
         if text.startswith('='):
-            return True
-
-        # 跳过日期格式（简单检测）
-        date_patterns = [
-            r'^\d{4}[-/]\d{1,2}[-/]\d{1,2}$',  # 2023-01-01 或 2023/01/01
-            r'^\d{1,2}[-/]\d{1,2}[-/]\d{4}$',  # 01-01-2023 或 01/01/2023
-            r'^\d{4}年\d{1,2}月\d{1,2}日$',    # 2023年1月1日
-        ]
-        for pattern in date_patterns:
-            if re.match(pattern, text):
-                return True
-
-        # 跳过纯符号和标点
-        if re.match(r'^[^\w\u4e00-\u9fff]+$', text):
-            return True
-
-        # 跳过过短的文本（少于2个有效字符）
-        # 移除空格和标点后检查
-        clean_for_length = re.sub(r'[^\w\u4e00-\u9fff]', '', text)
-        if len(clean_for_length) < 2:
-            return True
-
-        # 跳过纯英文字母或数字的简单标识符（如A1, B2等）
-        if re.match(r'^[A-Za-z]\d*$', text) or re.match(r'^\d+[A-Za-z]?$', text):
-            return True
-
-        # 跳过URL
-        if text.startswith(('http://', 'https://', 'www.', 'ftp://')):
-            return True
-
-        # 跳过邮箱地址
-        if '@' in text and '.' in text and re.match(r'^[^@]+@[^@]+\.[^@]+$', text):
+            logger.debug(f"跳过Excel公式: {text[:30]}...")
             return True
 
         return False

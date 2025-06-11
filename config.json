@@ -7,14 +7,16 @@
     },
     "fallback_translator": {
         "type": "ollama",
-        "model": "qwen2.5:14b",
+        "model": "qwen3:32b",
         "api_url": "https://50844s9656.wocp.fun",
         "available_models": [
-            "mollysama/rwkv-7-g1:0.4B",
-            "qwen2.5:14b",
-            "phi4:latest",
-            "qwen:7b",
-            "deepseek-r1:8b"
+            "failed",
+            "NAME",
+            "qwen3:32b",
+            "qwq:latest",
+            "mxbai-embed-large:latest",
+            "deepseek-r1:32b",
+            "glm4:9b-text-fp16"
         ],
         "model_list_timeout": 10.0,
         "translate_timeout": 60.0

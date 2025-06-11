@@ -289,6 +289,134 @@ class TermExtractor:
         logger.info(f"使用缓存的反向术语库，从外语文本中提取了 {len(used_terms)} 个术语")
         return used_terms
 
+    def replace_terms_with_target_language(self, text: str, terminology: Dict[str, str]) -> str:
+        """
+        直接将文本中的中文术语替换为目标语言术语，避免占位符机制
+
+        Args:
+            text: 原始中文文本
+            terminology: 术语字典，键为中文术语，值为目标语术语
+
+        Returns:
+            str: 替换后的文本
+        """
+        if not text or not terminology:
+            logger.warning("文本为空或术语库为空，无法进行术语替换")
+            return text
+
+        # 清空之前的匹配计数
+        self.match_count = {}
+
+        # 按照术语长度降序排序，确保优先替换最长的术语
+        sorted_terms = sorted(terminology.items(), key=lambda x: len(x[0]), reverse=True)
+
+        logger.info(f"开始直接替换术语为目标语言，术语库大小: {len(terminology)}")
+        logger.debug(f"原始文本前100个字符: {text[:100]}")
+
+        # 记录术语库样本（仅记录前5个术语，避免日志过大）
+        terms_sample = list(terminology.items())[:5]
+        logger.info(f"术语库样本（前5个）: {terms_sample}")
+
+        # 直接替换文本中的术语为目标语言术语
+        result_text = text
+        replaced_count = 0
+
+        for cn_term, foreign_term in sorted_terms:
+            # 跳过空术语
+            if not cn_term or not cn_term.strip() or not foreign_term or not foreign_term.strip():
+                continue
+
+            try:
+                # 使用正则表达式替换完整的术语（确保是独立的词，而不是其他词的一部分）
+                pattern = r'(?<![a-zA-Z0-9])' + re.escape(cn_term) + r'(?![a-zA-Z0-9])'
+
+                # 查找所有匹配项
+                matches = list(re.finditer(pattern, result_text))
+                if matches:
+                    # 记录匹配次数
+                    match_count = len(matches)
+                    self.match_count[cn_term] = match_count
+
+                    # 执行直接替换
+                    result_text = re.sub(pattern, foreign_term, result_text)
+                    replaced_count += 1
+
+                    logger.info(f"直接替换术语: {cn_term} -> {foreign_term} (匹配 {match_count} 次)")
+
+            except Exception as e:
+                logger.error(f"替换术语 '{cn_term}' 时发生错误: {e}")
+                continue
+
+        logger.info(f"直接替换了 {replaced_count} 个术语为目标语言")
+        if replaced_count > 0:
+            logger.debug(f"替换后文本前100个字符: {result_text[:100]}")
+
+        return result_text
+
+    def replace_foreign_terms_with_target_language(self, text: str, terminology: Dict[str, str]) -> str:
+        """
+        直接将文本中的外语术语替换为中文术语，避免占位符机制
+
+        Args:
+            text: 原始外语文本
+            terminology: 术语字典，键为外语术语，值为中文术语
+
+        Returns:
+            str: 替换后的文本
+        """
+        if not text or not terminology:
+            logger.warning("文本为空或术语库为空，无法进行术语替换")
+            return text
+
+        # 清空之前的匹配计数
+        self.match_count = {}
+
+        # 按照术语长度降序排序，确保优先替换最长的术语
+        sorted_terms = sorted(terminology.items(), key=lambda x: len(x[0]), reverse=True)
+
+        logger.info(f"开始直接替换外语术语为中文，术语库大小: {len(terminology)}")
+        logger.debug(f"原始文本前100个字符: {text[:100]}")
+
+        # 记录术语库样本（仅记录前5个术语，避免日志过大）
+        terms_sample = list(terminology.items())[:5]
+        logger.info(f"术语库样本（前5个）: {terms_sample}")
+
+        # 直接替换文本中的术语为中文术语
+        result_text = text
+        replaced_count = 0
+
+        for foreign_term, cn_term in sorted_terms:
+            # 跳过空术语
+            if not foreign_term or not foreign_term.strip() or not cn_term or not cn_term.strip():
+                continue
+
+            try:
+                # 使用正则表达式替换完整的术语（对于外语术语，使用单词边界）
+                pattern = r'\b' + re.escape(foreign_term) + r'\b'
+
+                # 查找所有匹配项
+                matches = list(re.finditer(pattern, result_text))
+                if matches:
+                    # 记录匹配次数
+                    match_count = len(matches)
+                    self.match_count[foreign_term] = match_count
+
+                    # 执行直接替换
+                    result_text = re.sub(pattern, cn_term, result_text)
+                    replaced_count += 1
+
+                    logger.info(f"直接替换外语术语: {foreign_term} -> {cn_term} (匹配 {match_count} 次)")
+
+            except Exception as e:
+                logger.error(f"替换外语术语 '{foreign_term}' 时发生错误: {e}")
+                continue
+
+        logger.info(f"直接替换了 {replaced_count} 个外语术语为中文")
+        if replaced_count > 0:
+            logger.debug(f"替换后文本前100个字符: {result_text[:100]}")
+
+        return result_text
+
     def replace_terms_with_placeholders(self, text: str, terminology: Dict[str, str]) -> str:
         """
         将中文文本中的术语替换为占位符

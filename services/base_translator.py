@@ -21,7 +21,7 @@ class BaseTranslator(ABC):
 
     def _filter_output(self, text: str, source_lang: str = "zh", target_lang: str = "en") -> str:
         """
-        过滤模型输出，去除思维链、不必要的标记和提示性文本
+        过滤模型输出，去除思维链、不必要的标记和提示性文本，并选择最佳翻译结果
 
         Args:
             text: 模型输出的文本
@@ -29,7 +29,7 @@ class BaseTranslator(ABC):
             target_lang: 目标语言代码，默认为英文(en)
 
         Returns:
-            str: 过滤后的文本
+            str: 过滤后的最佳翻译文本
         """
         # 如果输入为空，直接返回
         if not text or not text.strip():
@@ -48,6 +48,9 @@ class BaseTranslator(ABC):
 
         # 去除常见的标记前缀
         text = text.strip()
+
+        # 首先检查是否有多个翻译结果，选择最佳的一个
+        text = self._select_best_translation(text, target_lang)
 
         # 定义需要过滤的提示性文本列表
         prompt_texts = [
@@ -184,3 +187,128 @@ class BaseTranslator(ABC):
             return text.strip()
 
         return filtered_text
+
+    def _select_best_translation(self, text: str, target_lang: str) -> str:
+        """
+        从多个翻译结果中选择最佳的一个
+
+        Args:
+            text: 可能包含多个翻译结果的文本
+            target_lang: 目标语言代码
+
+        Returns:
+            str: 最佳的翻译结果
+        """
+        if not text or not text.strip():
+            return ""
+
+        # 按行分割文本
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+
+        # 如果只有一行，直接返回
+        if len(lines) <= 1:
+            return text.strip()
+
+        # 检查是否有重复的翻译结果
+        unique_lines = []
+        seen_lines = set()
+
+        for line in lines:
+            # 标准化处理：去除标点符号差异，转换为小写进行比较
+            normalized_line = line.lower().replace('.', '').replace(',', '').replace(':', '').replace(';', '').strip()
+
+            # 如果这行内容已经见过（忽略大小写和标点差异），跳过
+            if normalized_line in seen_lines:
+                continue
+
+            # 过滤掉明显的提示性文本
+            if any(prompt in line.lower() for prompt in [
+                'translation', 'translate', '翻译', '译文', '原文',
+                'here is', 'this is', 'the translation is',
+                'below is', 'following is'
+            ]):
+                continue
+
+            seen_lines.add(normalized_line)
+            unique_lines.append(line)
+
+        # 如果没有有效的行，返回原文
+        if not unique_lines:
+            return text.strip()
+
+        # 如果只有一个有效结果，返回它
+        if len(unique_lines) == 1:
+            return unique_lines[0]
+
+        # 选择最佳翻译的策略
+        best_translation = self._choose_best_from_candidates(unique_lines, target_lang)
+
+        return best_translation
+
+    def _choose_best_from_candidates(self, candidates: list, target_lang: str) -> str:
+        """
+        从候选翻译中选择最佳的一个
+
+        Args:
+            candidates: 候选翻译列表
+            target_lang: 目标语言代码
+
+        Returns:
+            str: 最佳翻译
+        """
+        if not candidates:
+            return ""
+
+        if len(candidates) == 1:
+            return candidates[0]
+
+        # 评分策略
+        scored_candidates = []
+
+        for candidate in candidates:
+            score = 0
+
+            # 长度评分：适中长度的翻译通常更好
+            length = len(candidate)
+            if 5 <= length <= 200:  # 合理的长度范围
+                score += 10
+            elif length > 200:
+                score -= 5  # 过长的翻译可能包含多余信息
+            elif length < 5:
+                score -= 10  # 过短的翻译可能不完整
+
+            # 语言一致性评分
+            if target_lang == "en":
+                # 英文翻译：应该主要包含英文字符
+                english_chars = sum(1 for c in candidate if c.isalpha() and ord(c) < 128)
+                chinese_chars = sum(1 for c in candidate if '\u4e00' <= c <= '\u9fff')
+                if english_chars > chinese_chars:
+                    score += 15
+                else:
+                    score -= 10
+            elif target_lang == "zh":
+                # 中文翻译：应该主要包含中文字符
+                chinese_chars = sum(1 for c in candidate if '\u4e00' <= c <= '\u9fff')
+                english_chars = sum(1 for c in candidate if c.isalpha() and ord(c) < 128)
+                if chinese_chars > english_chars:
+                    score += 15
+                else:
+                    score -= 10
+
+            # 格式评分：避免包含多余的标记
+            if not any(marker in candidate.lower() for marker in [
+                'translation:', 'translated:', '翻译:', '译文:',
+                'original:', '原文:', 'result:', '结果:'
+            ]):
+                score += 5
+
+            # 完整性评分：避免截断的翻译
+            if candidate.endswith('.') or candidate.endswith('。') or candidate.endswith('!') or candidate.endswith('？'):
+                score += 3
+
+            scored_candidates.append((candidate, score))
+
+        # 按分数排序，选择最高分的
+        scored_candidates.sort(key=lambda x: x[1], reverse=True)
+
+        return scored_candidates[0][0]
