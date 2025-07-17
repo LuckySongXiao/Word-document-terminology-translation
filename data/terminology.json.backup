@@ -142,7 +142,7 @@
   "光圈异常": "Flower\r",
   "零位错": "Zero-Dislocation\r",
   "提断/取段/工艺里面取晶": "Pop out (P/O)\r",
-  "指这个晶棒本身可以拉4-5m。 但是拉到2米，就把它拿出来。（半导体炉会涉及到的工艺）-未达目标长度提前取晶": "Section Pulling\r",
+  "提前取晶": "Section Pulling\r",
   "复投熔料": "Remelt: Recycle Poly\r",
   "吊多晶": "Pulling for Remelt (PFRM)\r",
   "小于直径": "Under Dia\r",
