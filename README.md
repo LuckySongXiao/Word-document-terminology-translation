@@ -1,6 +1,6 @@
 # 多格式文档-AI双语翻译助手
 
-一款基于AI技术的文档翻译工具，支持Word、PDF和PPT文件翻译，集成多种翻译API接口，包括智谱AI、Ollama、硅基流动API和内网OPENAI平台。
+一款基于AI技术的文档翻译工具，支持Word、PDF和Excel文件翻译，集成多种翻译API接口，包括智谱AI、Ollama、硅基流动API和内网OPENAI平台。
 
 ## 最新更新
 
