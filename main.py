@@ -18,6 +18,7 @@ from services.ollama_manager import OllamaManager
 from utils.api_config import APIConfig
 from services.siliconflow_translator import SiliconFlowTranslator
 from services.zhipuai_translator import ZhipuAITranslator
+from utils.terminal_capture import start_terminal_capture
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 
@@ -51,6 +52,15 @@ def main():
     # 设置日志
     logging.basicConfig(level=logging.DEBUG)
     logger = logging.getLogger(__name__)
+
+    # 启动终端捕获（可选，避免GUI阻塞）
+    try:
+        logger.info("启动终端输出捕获...")
+        # 暂时禁用终端捕获，避免可能的GUI冲突
+        # start_terminal_capture()
+        logger.info("终端输出捕获已跳过，避免GUI冲突")
+    except Exception as e:
+        logger.error(f"启动终端捕获失败: {e}")
 
     try:
         # 检查授权
@@ -87,9 +97,63 @@ def main():
             else:
                 return
 
-        # 授权验证通过，创建主应用窗口
+        # 临时跳过AI引擎选择对话框，直接使用默认设置
+        logger.info("使用默认AI引擎设置...")
+        print("DEBUG: 跳过AI引擎选择对话框，使用默认设置")
+        result = "confirm"
+        selected_engine = "zhipuai"
+        selected_model = "glm-4-flash-250414"
+        print(f"DEBUG: 使用默认设置，引擎: {selected_engine}, 模型: {selected_model}")
+        logger.info(f"使用默认AI引擎: {selected_engine}, 模型: {selected_model}")
+
+        # 授权验证通过且用户已选择引擎，准备创建服务
+        print("DEBUG: 准备创建各种服务...")
+
+        # 根据用户选择创建翻译服务实例
+        logger.info(f"创建翻译服务，引擎: {selected_engine}, 模型: {selected_model}")
+        translator = TranslationService(
+            preferred_engine=selected_engine,
+            preferred_model=selected_model
+        )
+        logger.info("翻译服务创建完成")
+
+        global doc_processor  # 声明全局变量
+        logger.info("创建文档处理器...")
+        doc_processor = DocumentProcessor(translator)
+        logger.info("文档处理器创建完成")
+
+        # 加载术语表
+        logger.info("加载术语表...")
+        terminology = load_terminology()
+        logger.info("术语表加载完成")
+
+        # 现在创建主应用窗口
+        print("DEBUG: 创建主应用窗口...")
         app_root = tk.Tk()
         app_root.title("多格式文档翻译助手")
+
+        # 确保窗口能够正确显示
+        app_root.geometry("1200x800")  # 设置窗口大小
+
+        # 设置窗口居中显示
+        app_root.update_idletasks()
+        width = 1200
+        height = 800
+        x = (app_root.winfo_screenwidth() // 2) - (width // 2)
+        y = (app_root.winfo_screenheight() // 2) - (height // 2)
+        app_root.geometry(f"{width}x{height}+{x}+{y}")
+
+        # 强制显示窗口
+        app_root.state('normal')  # 确保窗口状态正常
+        app_root.deiconify()  # 确保窗口不是最小化状态
+        app_root.lift()  # 将窗口提升到前台
+        app_root.focus_force()  # 强制获取焦点
+        app_root.attributes('-topmost', True)  # 临时置顶
+        app_root.after(2000, lambda: app_root.attributes('-topmost', False))  # 2秒后取消置顶
+
+        # 强制刷新窗口
+        app_root.update()
+        app_root.update_idletasks()
 
         # 创建菜单栏
         menubar = tk.Menu(app_root)
@@ -98,11 +162,7 @@ def main():
         # 创建设置菜单
         settings_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="设置", menu=settings_menu)
-
-        # 创建服务实例
-        translator = TranslationService()
-        global doc_processor  # 声明全局变量
-        doc_processor = DocumentProcessor(translator)
+        print("DEBUG: 主应用窗口和菜单创建完成")
 
         def show_api_settings():
             settings_window = tk.Toplevel(app_root)
@@ -138,7 +198,7 @@ def main():
             model_frame.pack(fill="x", padx=10, pady=5)
 
             tk.Label(model_frame, text="选择模型:").pack(anchor="w")
-            current_model = config.get("zhipuai_translator", {}).get("model", "glm-4-flash")
+            current_model = config.get("zhipuai_translator", {}).get("model", "glm-4-flash-250414")
             model_var = tk.StringVar(value=current_model)
 
             # 创建临时翻译器获取模型列表
@@ -209,7 +269,7 @@ def main():
 
                 try:
                     # 创建临时翻译器进行测试
-                    test_model = model_var.get() or "glm-4-flash"  # 确保有默认值
+                    test_model = model_var.get() or "glm-4-flash-250414"  # 确保有默认值
                     temp_translator = ZhipuAITranslator(api_key, test_model)
 
                     # 显示测试中的状态
@@ -603,6 +663,162 @@ def main():
 
         settings_menu.add_command(label="硅基流动设置", command=show_siliconflow_settings)
 
+        def show_intranet_settings():
+            settings_window = tk.Toplevel(app_root)
+            settings_window.title("内网OpenAI设置")
+            settings_window.geometry("500x600")
+
+            # 创建API配置目录
+            api_config_dir = os.path.join(os.path.dirname(__file__), "API_config")
+            if not os.path.exists(api_config_dir):
+                os.makedirs(api_config_dir)
+
+            # API地址设置
+            api_frame = tk.LabelFrame(settings_window, text="API设置", padx=10, pady=5)
+            api_frame.pack(fill="x", padx=10, pady=5)
+
+            tk.Label(api_frame, text="API地址:").pack(anchor="w")
+            api_url_entry = tk.Entry(api_frame, width=50)
+            api_url_entry.pack(fill="x", pady=(0, 5))
+
+            # 添加地址格式说明
+            tk.Label(api_frame, text="格式示例: http://192.168.100.71:8000", fg="gray").pack(anchor="w")
+            tk.Label(api_frame, text="注意: 系统会自动添加 /v1/chat/completions 路径", fg="gray").pack(anchor="w")
+
+            # 从配置文件中获取API URL
+            current_api_url = config.get("intranet_translator", {}).get("api_url", "")
+            if current_api_url:
+                # 移除末尾的路径，只显示基础URL
+                if current_api_url.endswith('/v1/chat/completions'):
+                    current_api_url = current_api_url[:-len('/v1/chat/completions')]
+                api_url_entry.insert(0, current_api_url)
+
+            # 模型选择
+            model_frame = tk.LabelFrame(settings_window, text="模型设置", padx=10, pady=5)
+            model_frame.pack(fill="x", padx=10, pady=5)
+
+            tk.Label(model_frame, text="选择模型:").pack(anchor="w")
+            current_model = config.get("intranet_translator", {}).get("model", "deepseek-r1-70b")
+            model_var = tk.StringVar(value=current_model)
+
+            # 创建临时翻译器获取模型列表
+            from services.intranet_translator import IntranetTranslator
+            temp_translator = IntranetTranslator("", "")
+            models = temp_translator.get_available_models()
+
+            for model in models:
+                tk.Radiobutton(model_frame,
+                              text=model,
+                              variable=model_var,
+                              value=model).pack(anchor="w")
+
+            # 超时设置
+            timeout_frame = tk.LabelFrame(settings_window, text="超时设置", padx=10, pady=5)
+            timeout_frame.pack(fill="x", padx=10, pady=5)
+
+            tk.Label(timeout_frame, text="请求超时时间 (秒):").pack(anchor="w")
+            timeout_var = tk.StringVar(value=str(config.get("intranet_translator", {}).get("timeout", 60)))
+            timeout_entry = tk.Entry(timeout_frame, textvariable=timeout_var, width=10)
+            timeout_entry.pack(anchor="w")
+
+            def validate_settings():
+                """验证设置"""
+                api_url = api_url_entry.get().strip()
+                if not api_url:
+                    messagebox.showwarning("警告", "API地址不能为空")
+                    return False
+
+                try:
+                    timeout = float(timeout_var.get())
+                    if timeout <= 0:
+                        messagebox.showwarning("警告", "超时时间必须大于0")
+                        return False
+                except ValueError:
+                    messagebox.showwarning("警告", "超时时间必须是有效的数字")
+                    return False
+
+                if not model_var.get():
+                    messagebox.showwarning("警告", "请选择一个模型")
+                    return False
+
+                return True
+
+            def test_connection():
+                """测试API连接"""
+                api_url = api_url_entry.get().strip()
+                if not api_url:
+                    messagebox.showwarning("警告", "请先输入API地址")
+                    return
+
+                try:
+                    # 创建临时翻译器进行测试
+                    test_model = model_var.get() or "deepseek-r1-70b"
+                    temp_translator = IntranetTranslator(api_url, test_model)
+
+                    # 显示测试中的状态
+                    status_label = tk.Label(settings_window, text="正在测试连接...", fg="blue")
+                    status_label.pack(pady=5)
+                    settings_window.update()
+
+                    if temp_translator.test_connection():
+                        status_label.config(text="连接测试成功", fg="green")
+                        messagebox.showinfo("成功", "内网API连接测试成功！")
+                    else:
+                        status_label.config(text="连接测试失败", fg="red")
+                        messagebox.showerror("错误", "内网API连接测试失败，请检查地址和网络连接")
+                except Exception as e:
+                    messagebox.showerror("错误", f"连接测试失败：{str(e)}")
+                finally:
+                    try:
+                        status_label.destroy()
+                    except:
+                        pass
+
+            def save_settings():
+                """保存设置"""
+                if not validate_settings():
+                    return
+
+                try:
+                    api_url = api_url_entry.get().strip()
+
+                    # 更新主配置
+                    if "intranet_translator" not in config:
+                        config["intranet_translator"] = {}
+
+                    config["intranet_translator"].update({
+                        "type": "intranet",
+                        "api_url": api_url,
+                        "model": model_var.get(),
+                        "timeout": float(timeout_var.get())
+                    })
+
+                    if save_config(config):
+                        # 重新初始化翻译服务
+                        global doc_processor
+                        translator = TranslationService()
+                        doc_processor.translator = translator
+
+                        messagebox.showinfo("成功", "设置已保存并更新")
+                        settings_window.destroy()
+
+                        # 更新主界面状态
+                        if 'status_var' in globals():
+                            status_var.set("配置已更新，正在检查服务状态...")
+                            app_root.update()
+                            check_translator_status()
+                except Exception as e:
+                    messagebox.showerror("错误", f"保存设置失败：{str(e)}")
+
+            # 按钮区域
+            button_frame = tk.Frame(settings_window)
+            button_frame.pack(pady=10)
+
+            tk.Button(button_frame, text="测试连接", command=test_connection).pack(side="left", padx=5)
+            tk.Button(button_frame, text="保存", command=save_settings).pack(side="left", padx=5)
+
+        settings_menu.add_command(label="内网OpenAI设置", command=show_intranet_settings)
+
         # 创建帮助菜单
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="帮助", menu=help_menu)
@@ -660,14 +876,61 @@ def main():
                 messagebox.showwarning("授权即将过期", message + "\n\n请及时联系软件供应商续期授权")
             app_root.after(2000, show_expiry_notice)
 
-        # 初始化术语表
-        terminology = load_terminology()
+        # 术语表已在前面加载
 
         # 启动UI
-        create_ui(app_root, terminology)
+        logger.info("创建主界面...")
+        print("DEBUG: 准备创建主界面")
+        global status_var
+        print("DEBUG: 正在调用create_ui函数...")
+        try:
+            status_var = create_ui(app_root, terminology, translator)
+            print("DEBUG: create_ui函数调用完成")
+            logger.info("主界面创建完成")
+            print("DEBUG: 即将退出try块")
+        except Exception as e:
+            print(f"DEBUG: create_ui函数调用失败: {e}")
+            logger.error(f"创建主界面失败: {e}")
+            raise
 
+        print("DEBUG: 已退出try块，准备启动主循环")
         # 运行主循环，保持窗口打开
-        app_root.mainloop()
+        print("DEBUG: 准备启动主循环")
+        logger.info("启动主循环...")
+
+        # 最简化的窗口显示操作
+        print("DEBUG: 准备显示窗口...")
+        app_root.deiconify()  # 确保窗口不是最小化状态
+        print("DEBUG: 窗口deiconify完成")
+
+        # 强制刷新窗口，确保所有组件都已正确渲染
+        app_root.update()
+        app_root.update_idletasks()
+        print("DEBUG: 窗口更新完成")
+
+        # GUI状态检查已禁用，避免日志刷新
+        # 如果需要调试GUI状态，可以取消下面的注释
+        # def gui_status_check():
+        #     print("DEBUG: GUI主循环正在运行...")
+        #     logger.info("GUI主循环正在运行")
+        #     app_root.after(5000, gui_status_check)  # 每5秒打印一次状态
+        # app_root.after(2000, gui_status_check)  # 2秒后开始状态检查
+
+        print("DEBUG: 正在调用app_root.mainloop()")
+        try:
+            # 在启动mainloop前再次确保窗口状态正常
+            if app_root.winfo_exists():
+                print("DEBUG: 窗口存在，准备启动主循环")
+                app_root.mainloop()
+                print("DEBUG: mainloop()调用结束")
+                logger.info("主循环结束")
+            else:
+                print("DEBUG: 窗口不存在，无法启动主循环")
+                logger.error("窗口不存在，无法启动主循环")
+        except Exception as e:
+            print(f"DEBUG: mainloop()调用失败: {e}")
+            logger.error(f"主循环失败: {e}")
+            raise
 
     except KeyboardInterrupt:
         logger.info("用户中断程序运行")
@@ -730,48 +993,47 @@ def translate_with_terminology(text, target_lang):
         logging.warning(f"未找到{target_lang}术语表或术语表为空，将直接进行翻译")
         return translate_text(text, target_lang)
 
-    # 构建带术语表的提示词
-    prompt = f"""你是一位专业的技术文档翻译专家。请将以下文本翻译成{target_lang}，并严格遵循以下要求：
+    # 注意：这个函数已经过时，不应该再使用
+    # 现在应该直接使用DocumentProcessor中的翻译逻辑
+    logging.warning("translate_with_terminology函数已过时，应该使用DocumentProcessor进行翻译")
 
-1. 这是一份专业的技术文档，请保持专业性和准确性
-2. 必须严格使用以下专业术语对照表进行翻译，这些是标准化的术语：
-
-专业术语对照表：
-"""
-
-    # 添加术语表内容，按照更清晰的格式排列
-    for cn_term, foreign_term in terms_dict.items():
-        prompt += f"[{cn_term}] ➜ [{foreign_term}]\n"
-
-    prompt += f"""
-翻译要求：
-1. 上述术语表中的词语必须严格按照给定的对应关系翻译，不得改变
-2. 遇到术语表中的词语时，必须使用术语表中的标准译法
-3. 对于术语表之外的词语，请采用该领域的专业表达方式
-4. 保持原文的格式、换行和标点符号
-5. 确保专业性和一致性，禁止出现翻译解析，禁止输出术语表
-6.不要输出与翻译结果无关的扩展补充内容，例如提示词、总结、解释等
-
-原文：
-{text}
-
-译文："""
-
-    # 调用翻译API
-    translated = translate_text(prompt, target_lang)
-    logging.info(f"使用了 {len(terms_dict)} 个{target_lang}术语进行翻译")
-
-    return translated
+    # 直接调用翻译服务，不使用复杂的提示词
+    translator = TranslationService()
+    return translator.translate_text(text)
 
 def check_translator_status():
     """检查翻译器状态"""
     try:
         if doc_processor and doc_processor.translator:
-            zhipuai_status = doc_processor.translator._check_zhipuai_available()
-            if zhipuai_status:
-                status_var.set("智谱AI服务正常")
+            # 检查当前选择的翻译器状态
+            current_type = doc_processor.translator.get_current_translator_type()
+
+            if current_type == "zhipuai":
+                zhipuai_status = doc_processor.translator._check_zhipuai_available()
+                if zhipuai_status:
+                    status_var.set("智谱AI服务正常")
+                else:
+                    status_var.set("智谱AI服务不可用，请检查配置")
+            elif current_type == "ollama":
+                ollama_status = doc_processor.translator.check_ollama_service()
+                if ollama_status:
+                    status_var.set("Ollama服务正常")
+                else:
+                    status_var.set("Ollama服务不可用，请检查配置")
+            elif current_type == "siliconflow":
+                siliconflow_status = doc_processor.translator.check_siliconflow_service()
+                if siliconflow_status:
+                    status_var.set("硅基流动服务正常")
+                else:
+                    status_var.set("硅基流动服务不可用，请检查配置")
+            elif current_type == "intranet":
+                intranet_status = doc_processor.translator.check_intranet_service()
+                if intranet_status:
+                    status_var.set("内网OpenAI服务正常")
+                else:
+                    status_var.set("内网OpenAI服务不可用，请检查配置")
             else:
-                status_var.set("智谱AI服务不可用，请检查配置")
+                status_var.set(f"当前翻译器类型: {current_type}")
         else:
             status_var.set("翻译服务未初始化")
     except Exception as e:

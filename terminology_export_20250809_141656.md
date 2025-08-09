@@ -1,0 +1,196 @@
+﻿# 术语库
+
+导出时间: 2025-08-09 14:17:13
+术语总数: 179
+
+## 英语术语
+
+- 按照 -> According to
+- 奥特维 -> ATW
+- 摆幅 -> Wobble?amplitude?
+- 报废 -> Scrap/Reject
+- 部分 -> Partial
+- 部件 -> Parts
+  > 备注: 零部件
+- 掺杂剂，母合金 -> Dopant
+- 插籽晶 -> Dip seed
+- 单晶硅 -> mono silicon
+- 单晶硅棒 -> Ingot
+- 单晶炉 -> Puller
+  > 备注: 术语
+- 导流筒 -> shield
+- 导气管石英垫片 -> Airway Quartz Gasket
+- 导气弯管 -> Air duct
+- 导气直管 -> straight air guiding tube
+- 导气直管挡环 -> Air straight pipe retaining ring
+- 等径 -> body
+- 底部电极 -> Bottom electrode
+- 底部电极螺栓 -> Bottom electrode bolt
+- 底部电极螺栓护盖 -> Bottom electrode bolt cover
+- 底部加热器 -> Bottom heater
+- 底部支撑环 -> Bottom support ring
+- 电极护套 -> Electrode sheath
+- 电极护套2 -> Electrode sheath 2
+- 电极护套3 -> Electrode sheath 3
+- 电极螺栓 -> Electrode bolt
+- 电阻率 -> Resistivity (RES)
+- 电阻率径向梯度 -> RRG (Resistivity Radial Gradient)
+- 吊多晶 -> Pulling for Remelt (PFRM)
+- 调温 -> adjust temperature
+- 顶部保温 -> Top insulation
+- 端面 -> End face
+- 断线 -> Structure Loss (Loss of Structure)
+- 煅烧 -> Bake out
+- 多晶硅 -> Polysilicon
+- 方棒 -> mono brick
+- 放肩 -> crown
+- 分类 -> Classification/Classify
+- 辅助加热器 -> Auxiliary heater
+- 附加功能 -> ADD. FUNCTIONS
+- 复投料筒 -> recharge tube
+- 复投熔料 -> Remelt: Recycle Poly
+- 副炉室 -> pull room
+- 副室 -> pull room
+- 坩埚提升 -> CRUCIBLE LIFT
+- 坩埚旋转 -> CRUCIBLE ROTATION
+- 高温钼丝 -> High temperature molybdenum wire
+- 共振晶棒转速 -> Resonance crystal rotational rate
+- 光圈 -> Meniscus
+- 光圈异常 -> Flower
+- 埚跟比 -> SL-CL ratio
+- 红斑/白斑（黑点） -> Red spot / White spot
+- 护盘压片 -> Guard plate
+- 划痕 -> Scratch
+- 划弧， 概念和Orbit差不多，但是是硬轴的 -> Cogging
+- 画弧 （晶棒画弧） -> Orbit
+- 回熔 -> Melt Back
+- 加热器 -> HEATER POWER
+- 溅硅 -> Splash
+- 结晶 -> Icing
+- 截断金刚线 -> Cropper diamond wire
+- 金刚石砂轮 -> Grinder diamond wheel
+- 进行 -> Perform/Conduct
+- 晶棒 -> Ingot
+- 晶棒扭曲 -> Dog leg (Snake growth)
+- 晶裂 -> Crystal crack
+- 晶盛 -> JSG
+- 晶体划弧 -> ingot arc drawing
+- 绝对液口距 -> Absolute MeltGap
+- 开方金刚线 -> Square diamond wire
+- 控径 -> Constant diameter
+- 快速 -> JOG
+- 馈通/导线 -> Feed-through
+- 料块，未完全融化的硅料 -> Rock
+- 裂纹 -> Crack
+- 零位错 -> Zero-Dislocation
+- 炉 -> Puller
+  > 备注: 此处特指单晶炉
+- 炉底保温板 -> Hearth insulation board
+- 炉台 -> Puller
+  > 备注: 此处特指单晶炉
+- 孪晶 -> Twin
+- 慢速 -> Low Speed
+- 每台 -> pre puller
+  > 备注: 每台单晶炉
+- 钼环1 -> molybdenum ring 1
+- 配方参数 -> Recipe
+- 气泡 -> Bubble
+- 氢氟酸 -> HF
+- 取段 -> Pop out
+- 缺陷 -> COP (Crystal Originated Particle)
+- 热场 -> Hot zone
+- 热场部件 -> Hot zone parts
+- 热场控制 -> Hot zone control
+- 热场石墨部件 -> Graphite Hot Zone Parts
+- 热电偶 -> Thermocouple
+- 热屏环 -> Hot screen ring
+- 热屏提升块 -> Hot screen lifting block
+- 熔接 -> Dip
+- 熔接亮度 -> meltbright
+- 熔料 -> Melt
+- 上保温 -> Upper insulation
+- 上保温盖 -> upper insulation cover
+- 上保温筒 -> upper insulation tube
+- 上升 -> UP
+- 上石墨环 -> Upper graphite ring
+- 上位机 -> HMI(human-machine interface)
+- 上下保温盖内环 -> Upper and lower insulation cover inner ring
+- 少子寿命 -> MCLT (Minority Carrier Lifetime)
+- 设定速度 -> DRIVE
+- 升温控制 -> Temperature control
+- 生长控制 -> Growth control
+- 石英坩埚 -> Quartz Crucible
+- 石英护套 -> Quartz sheath
+- 石英环 -> quartz ring
+- 石英加料管 -> quartz refeed tube
+- 石英加料筒 -> quartz refeed tube
+- 实际速度 -> MONITOR
+- 收尾 -> Tail
+- 水冷屏 -> water cooling jacket
+- 水冷热屏保温1 -> Water cooling hot screen insulation 1
+- 水冷热屏保温2 -> Water-cooled hot screen insulation 2
+- 松瓷机电 -> SCEC
+- 碎片 -> Chip
+- 碳箔 -> Carbon foil
+- 碳含量 -> [Cs] / the concentration of substitutional carbon
+- 碳碳坩埚 -> C-C Crucible
+- 提断/取段/工艺里面取晶 -> Pop out (P/O)
+- 提升螺钉 -> Lifting screw
+- 提升螺母 -> Lifting nut
+- 提渣 -> Junk
+- 停炉取晶 -> shutdown
+- 统一 -> Uniformly
+- 托杆护套 -> Pole Sheath
+- 托杆护套2 -> Bracket sheath 2
+- 托杆护套盖 -> Pole Sleeve Cover
+- 托杆上盘 -> pallet
+- 托杆下轴 -> support lower shaft
+- 外部控制晶升 -> REMOTE SL HEATER
+- 外导流筒 -> Outer Baffle
+- 完整晶棒 -> Full Structure
+- 尾料 -> Tail material
+- 位错 -> Dislocation
+- 污渍 -> Vapor/Stain
+- 无尘布 -> Dust-free cloth
+- 下保温 -> Under insulation
+- 下保温盖 -> lower insulation cover
+- 下保温筒 -> lower insulation tube
+- 下降 -> DOWN
+- 下石墨环 -> Lower graphite ring
+- 硝酸 -> HNO(formula for solute)
+- 小于直径 -> Under Dia
+- 氧含量 -> [Oi[] / the concentration of interstitial oxygen
+- 氧化堆积位错 -> OiSF (Oxidation Induced Stacking Fault)
+- 摇摆共振 -> Pendulum?resonance
+- 液口距 -> MeltGap
+- 液面温控 -> meltBright control
+- 异常 -> Abnormal
+- 引放 -> Neck and Crown
+  > 备注: 引晶和放肩
+- 引晶 -> neck
+- 预热熔接 -> Preheat melting
+- 原材料 -> Raw Material
+- 圆棒 -> mono ingot
+- 脏污 -> Dirt
+- 真空管道 -> Vacuum line
+- 整根 -> Entire ingot
+- 支撑环 -> Support ring
+- 直径控制 -> Diameter control
+- 中保温 -> Medium insulation
+- 中保温筒 -> medium thermal insulation tube
+- 中断提出 -> Section Pulling
+- 主电极 -> Main electrode
+- 主电极螺栓护盖 -> Main electrode bolt cover
+- 主加热器 -> main heater
+- 主炉室 -> main chamber
+- 主室 -> main chamber
+- 转肩 -> shoulder
+- 籽晶 -> Seed
+- 籽晶提升 -> SEED LIFT
+- 籽晶旋转 -> SEED ROTATION
+- 自动操作 -> AUTO OPTIONS
+- A面 -> A-side
+
+## 分类统计
+
+- 未分类: 179 条

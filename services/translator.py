@@ -2,8 +2,6 @@ import requests
 import json
 import logging
 import os
-import sys
-from pathlib import Path
 from typing import Dict, Optional
 from abc import ABC, abstractmethod
 from .ollama_manager import setup_ollama
@@ -18,132 +16,6 @@ import traceback
 
 logger = logging.getLogger(__name__)
 
-def verify_api_config_files() -> bool:
-    """
-    验证API配置文件是否存在
-
-    Returns:
-        bool: 如果所有必需的配置文件都存在则返回True
-    """
-    try:
-        logger.info("开始验证API配置文件...")
-        api_config_dir = find_resource_path("API_config")
-        logger.info(f"API配置目录: {api_config_dir}")
-
-        if not os.path.exists(api_config_dir):
-            logger.error(f"API配置目录不存在: {api_config_dir}")
-            return False
-
-        required_files = [
-            "zhipu_api.json",
-            "ollama_api.json",
-            "siliconflow_api.json"
-        ]
-
-        logger.info(f"需要验证的配置文件: {required_files}")
-
-        missing_files = []
-        existing_files = []
-        for file_name in required_files:
-            file_path = os.path.join(api_config_dir, file_name)
-            if not os.path.exists(file_path):
-                missing_files.append(file_path)
-                logger.warning(f"❌ 配置文件缺失: {file_path}")
-            else:
-                existing_files.append(file_path)
-                logger.info(f"✓ 配置文件存在: {file_path}")
-                # 检查文件内容
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        content = json.load(f)
-                        logger.debug(f"配置文件内容: {file_name} -> {list(content.keys())}")
-                except Exception as e:
-                    logger.warning(f"读取配置文件失败 {file_name}: {e}")
-
-        if missing_files:
-            logger.error(f"缺失的配置文件: {missing_files}")
-            logger.info(f"存在的配置文件: {existing_files}")
-            return False
-
-        logger.info("✓ 所有API配置文件验证通过")
-        return True
-    except Exception as e:
-        logger.error(f"验证API配置文件时出错: {e}")
-        logger.error(traceback.format_exc())
-        return False
-
-def find_resource_path(resource_name: str, max_retries: int = 5) -> str:
-    """
-    查找资源文件路径，适用于源码和封装环境
-    增加重试机制以应对文件解压时序问题
-
-    Args:
-        resource_name: 资源名称，如 'config.json', 'API_config'
-        max_retries: 最大重试次数
-
-    Returns:
-        str: 资源文件的完整路径
-    """
-    import time
-
-    logger.debug(f"查找资源: {resource_name}")
-    logger.debug(f"运行环境: {'封装' if getattr(sys, 'frozen', False) else '源码'}")
-
-    for retry in range(max_retries):
-        possible_paths = []
-
-        if getattr(sys, 'frozen', False):
-            # 封装环境 - 增加更多候选路径
-            if hasattr(sys, '_MEIPASS'):
-                # PyInstaller单文件模式
-                meipass_dir = Path(sys._MEIPASS)
-                possible_paths.extend([
-                    meipass_dir / resource_name,
-                    meipass_dir / "_internal" / resource_name,
-                    meipass_dir / "data" / resource_name,
-                ])
-                logger.debug(f"_MEIPASS目录: {sys._MEIPASS}")
-
-            # 可执行文件目录
-            exe_dir = Path(sys.executable).parent
-            possible_paths.extend([
-                exe_dir / resource_name,
-                exe_dir / "_internal" / resource_name,
-                exe_dir / "data" / resource_name,
-            ])
-            logger.debug(f"可执行文件目录: {exe_dir}")
-        else:
-            # 源码环境
-            current_dir = Path(__file__).parent.parent
-            possible_paths.extend([
-                current_dir / resource_name,
-                current_dir / ".." / resource_name,
-            ])
-            logger.debug(f"源码目录: {current_dir}")
-
-        logger.debug(f"候选路径 (重试 {retry + 1}/{max_retries}): {[str(p) for p in possible_paths]}")
-
-        # 查找存在的路径
-        for path in possible_paths:
-            logger.debug(f"检查路径: {path} -> 存在: {path.exists()}")
-            if path.exists():
-                if retry > 0:
-                    logger.info(f"找到资源 {resource_name}: {path} (重试次数: {retry})")
-                else:
-                    logger.debug(f"找到资源 {resource_name}: {path}")
-                return str(path)
-
-        # 如果没找到且还有重试次数，等待一下再试
-        if retry < max_retries - 1:
-            logger.warning(f"资源 {resource_name} 未找到，等待500ms后重试 ({retry + 1}/{max_retries})")
-            time.sleep(0.5)
-
-    # 所有重试都失败，返回默认路径
-    default_path = Path(__file__).parent.parent / resource_name
-    logger.error(f"经过 {max_retries} 次重试仍未找到资源 {resource_name}，使用默认路径: {default_path}")
-    logger.error(f"最后尝试的路径: {[str(p) for p in possible_paths]}")
-    return str(default_path)
-
 class BaseTranslator(ABC):
     @abstractmethod
     def translate(self, text: str) -> str:
@@ -152,123 +24,156 @@ class BaseTranslator(ABC):
 # 注意：OllamaTranslator 类已经从 .ollama_translator 导入，不需要在这里重新定义
 
 class TranslationService:
-    def __init__(self):
+    def __init__(self, preferred_engine=None, preferred_model=None):
+        """
+        初始化翻译服务
+
+        Args:
+            preferred_engine: 用户首选的AI引擎类型 (zhipuai, ollama, siliconflow, intranet)
+            preferred_model: 用户首选的模型名称
+        """
         self.use_fallback = False
+        self.preferred_engine = preferred_engine
+        self.preferred_model = preferred_model
         self.load_config()
 
         # 初始化 translators 字典
         self.translators = {}
 
-        # 初始化 current_translator_type
-        self.current_translator_type = self.config.get('current_translator_type', 'zhipuai')
-
-        # 添加错误计数器，用于跟踪API连接失败次数
-        self.api_error_counts = {
-            'zhipuai': 0,
-            'siliconflow': 0,
-            'intranet': 0
-        }
-        self.max_api_errors = 2  # 最大允许的API错误次数
-
-        # 添加连接状态缓存
-        self.connection_status = {
-            'zhipuai': None,  # None表示未测试，True表示可用，False表示不可用
-            'siliconflow': None,
-            'intranet': None,
-            'ollama': None
-        }
-
-        # 在封装环境中，先验证配置文件是否存在
-        if getattr(sys, 'frozen', False):
-            logger.info("检测到封装环境，验证API配置文件...")
-            logger.info(f"sys._MEIPASS: {getattr(sys, '_MEIPASS', 'Not found')}")
-            logger.info(f"sys.executable: {sys.executable}")
-            if not verify_api_config_files():
-                logger.error("部分API配置文件缺失，翻译器初始化将受影响")
-            else:
-                logger.info("API配置文件验证通过")
+        # 根据用户选择设置当前翻译器类型
+        if preferred_engine:
+            self.current_translator_type = preferred_engine
         else:
-            logger.info("检测到源码环境，直接进行翻译器初始化")
+            self.current_translator_type = self.config.get('current_translator_type', 'zhipuai')
 
-        # 初始化所有翻译器（不进行连接测试）
-        initialized_count = 0
+        # 添加操作控制变量
+        self._stop_flag = False  # 停止标志
+        self._current_operations = []  # 当前正在进行的操作
+
+        # 根据用户选择初始化对应的翻译器
         try:
-            # 初始化智谱AI翻译器
-            try:
-                zhipuai_translator = self._init_zhipuai_translator()
-                if zhipuai_translator:
-                    self.translators['zhipuai'] = zhipuai_translator
-                    initialized_count += 1
-                    logger.info("智谱AI翻译器初始化成功")
-                else:
-                    logger.warning("智谱AI翻译器初始化失败：API密钥未配置或配置错误")
-            except Exception as e:
-                logger.error(f"智谱AI翻译器初始化异常: {str(e)}")
-
-            # 初始化Ollama翻译器
-            try:
-                ollama_translator = self._init_ollama_translator()
-                if ollama_translator:
-                    self.translators['ollama'] = ollama_translator
-                    initialized_count += 1
-                    logger.info("Ollama翻译器初始化成功")
-                else:
-                    logger.warning("Ollama翻译器初始化失败：配置错误")
-            except Exception as e:
-                logger.error(f"Ollama翻译器初始化异常: {str(e)}")
-
-            # 初始化硅基流动翻译器
-            try:
-                siliconflow_translator = self._init_siliconflow_translator()
-                if siliconflow_translator:
-                    self.translators['siliconflow'] = siliconflow_translator
-                    initialized_count += 1
-                    logger.info("硅基流动翻译器初始化成功")
-                else:
-                    logger.warning("硅基流动翻译器初始化失败：API密钥未配置或配置错误")
-            except Exception as e:
-                logger.error(f"硅基流动翻译器初始化异常: {str(e)}")
-
-            # 初始化内网翻译器
-            try:
-                intranet_translator = self._init_intranet_translator()
-                if intranet_translator:
-                    self.translators['intranet'] = intranet_translator
-                    initialized_count += 1
-                    logger.info("内网翻译器初始化成功")
-                else:
-                    logger.warning("内网翻译器初始化失败：API URL未配置或配置错误")
-            except Exception as e:
-                logger.error(f"内网翻译器初始化异常: {str(e)}")
+            if preferred_engine:
+                # 只初始化用户选择的翻译器
+                self._init_selected_translator(preferred_engine, preferred_model)
+            else:
+                # 初始化所有翻译器（兼容旧版本）
+                self._init_all_translators()
 
         except Exception as e:
-            logger.error(f"翻译器初始化过程中发生严重错误: {str(e)}")
+            logger.error(f"初始化翻译器失败: {str(e)}")
             logger.error(traceback.format_exc())
 
-        logger.info(f"翻译器初始化完成，成功初始化 {initialized_count} 个翻译器")
+        # 设置Ollama环境（如果需要）
+        if preferred_engine == 'ollama' or not preferred_engine:
+            available_models = setup_ollama()
+            if available_models:
+                self.config['fallback_translator']['available_models'] = available_models
+                if self.config['fallback_translator']['model'] not in available_models:
+                    self.config['fallback_translator']['model'] = available_models[0]
 
-        if initialized_count == 0:
-            logger.error("没有任何翻译器初始化成功，请检查配置文件和API密钥")
-            raise Exception("翻译服务初始化失败：没有可用的翻译器")
+        # 如果没有指定首选引擎，则进行智能选择
+        if not preferred_engine:
+            # 检查是否为内网环境
+            is_intranet = self._detect_intranet_environment()
+            # 智能选择默认翻译器
+            self._smart_select_default_translator(is_intranet)
 
-        # 设置Ollama环境
-        available_models = setup_ollama()
-        if available_models:
-            self.config['fallback_translator']['available_models'] = available_models
-            if self.config['fallback_translator']['model'] not in available_models:
-                self.config['fallback_translator']['model'] = available_models[0]
+        # 初始化时只进行一次轻量级检测，不进行网络连接测试
+        logger.info("翻译服务初始化完成，将在用户选择时进行服务状态检测")
 
-        logger.info("翻译服务初始化完成，连接测试将在用户选择平台时进行")
+    def _init_selected_translator(self, engine_type, model_name=None):
+        """
+        初始化用户选择的特定翻译器
+
+        Args:
+            engine_type: 引擎类型 (zhipuai, ollama, siliconflow, intranet)
+            model_name: 模型名称
+        """
+        logger.info(f"初始化用户选择的翻译器: {engine_type}, 模型: {model_name}")
+
+        try:
+            if engine_type == 'zhipuai':
+                translator = self._init_zhipuai_translator(model_name)
+                if translator:
+                    self.translators['zhipuai'] = translator
+                    logger.info("智谱AI翻译器初始化成功")
+
+            elif engine_type == 'ollama':
+                translator = self._init_ollama_translator(model_name)
+                if translator:
+                    self.translators['ollama'] = translator
+                    logger.info("Ollama翻译器初始化成功")
+
+            elif engine_type == 'siliconflow':
+                translator = self._init_siliconflow_translator(model_name)
+                if translator:
+                    self.translators['siliconflow'] = translator
+                    logger.info("硅基流动翻译器初始化成功")
+
+            elif engine_type == 'intranet':
+                translator = self._init_intranet_translator(model_name)
+                if translator:
+                    self.translators['intranet'] = translator
+                    logger.info("内网翻译器初始化成功")
+
+            else:
+                logger.warning(f"不支持的翻译器类型: {engine_type}")
+
+        except Exception as e:
+            logger.error(f"初始化{engine_type}翻译器失败: {str(e)}")
+            logger.error(traceback.format_exc())
+
+    def _init_all_translators(self):
+        """初始化所有翻译器（兼容旧版本）"""
+        # 初始化智谱AI翻译器
+        zhipuai_translator = self._init_zhipuai_translator()
+        if zhipuai_translator:
+            self.translators['zhipuai'] = zhipuai_translator
+
+        # 初始化Ollama翻译器
+        ollama_translator = self._init_ollama_translator()
+        if ollama_translator:
+            self.translators['ollama'] = ollama_translator
+
+        # 初始化硅基流动翻译器
+        siliconflow_translator = self._init_siliconflow_translator()
+        if siliconflow_translator:
+            self.translators['siliconflow'] = siliconflow_translator
+
+        # 初始化内网翻译器
+        intranet_translator = self._init_intranet_translator()
+        if intranet_translator:
+            self.translators['intranet'] = intranet_translator
 
     def load_config(self):
         """加载配置"""
-        config_path = find_resource_path('config.json')
+        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.json')
         with open(config_path, 'r', encoding='utf-8') as f:
             self.config = json.load(f)
 
-        # 不在这里初始化主要翻译器，而是在后面的初始化过程中统一处理
-        # 这样可以确保使用正确的API配置文件
-        logger.info("配置文件加载完成，翻译器将在后续步骤中初始化")
+        # 初始化主要翻译器
+        try:
+            primary_config = self.config['primary_translator']
+            if primary_config['type'] == 'zhipuai':
+                # 使用 ZhipuAITranslator，优先从环境变量读取API key
+                from .zhipuai_translator import ZhipuAITranslator
+
+                self.primary_translator = ZhipuAITranslator(
+                    model=primary_config.get('model', 'GLM-4-Flash-250414'),
+                    temperature=primary_config.get('temperature', 0.2)
+                )
+
+                if self.primary_translator.api_key:
+                    logger.info("使用智谱AI翻译器初始化完成")
+                else:
+                    raise ValueError("智谱AI API Key未配置")
+            else:
+                raise ValueError(f"不支持的主要翻译器类型: {primary_config['type']}")
+        except Exception as e:
+            logger.error(f"初始化主要翻译器失败: {str(e)}")
+            logger.error(traceback.format_exc())
+            # 如果主翻译器初始化失败，标记使用备用翻译器
+            self.use_fallback = True
 
         # 初始化备用翻译器
         try:
@@ -287,112 +192,109 @@ class TranslationService:
             logger.error(f"初始化备用翻译器失败: {str(e)}")
             logger.error(traceback.format_exc())
 
-    def test_translator_connection(self, translator_type: str) -> bool:
-        """
-        测试指定翻译器的连接状态
+    def set_translator_type(self, translator_type: str, skip_check: bool = False, auto_test: bool = False):
+        """设置当前使用的翻译器类型，可选择跳过服务状态检测以提高速度
 
         Args:
-            translator_type: 翻译器类型 ('zhipuai', 'siliconflow', 'intranet', 'ollama')
-
-        Returns:
-            bool: 连接是否成功
+            translator_type: 翻译器类型
+            skip_check: 是否跳过切换前的网络检查
+            auto_test: 是否在切换完成后自动进行通讯测试
         """
-        # 如果已经测试过且状态为可用，直接返回
-        if self.connection_status.get(translator_type) is True:
-            logger.info(f"{translator_type}连接状态已缓存为可用")
-            return True
-
-        logger.info(f"正在测试{translator_type}连接...")
-
-        try:
-            if translator_type == 'zhipuai':
-                if 'zhipuai' in self.translators:
-                    result = self._check_zhipuai_available()
-                    self.connection_status['zhipuai'] = result
-                    if result:
-                        logger.info("智谱AI连接测试成功")
-                        self.api_error_counts['zhipuai'] = 0  # 重置错误计数
-                    else:
-                        logger.warning("智谱AI连接测试失败")
-                    return result
-
-            elif translator_type == 'siliconflow':
-                if 'siliconflow' in self.translators:
-                    result = self.check_siliconflow_service()
-                    self.connection_status['siliconflow'] = result
-                    if result:
-                        logger.info("硅基流动连接测试成功")
-                        self.api_error_counts['siliconflow'] = 0  # 重置错误计数
-                    else:
-                        logger.warning("硅基流动连接测试失败")
-                    return result
-
-            elif translator_type == 'intranet':
-                if 'intranet' in self.translators:
-                    result = self.check_intranet_service()
-                    self.connection_status['intranet'] = result
-                    if result:
-                        logger.info("内网翻译器连接测试成功")
-                        self.api_error_counts['intranet'] = 0  # 重置错误计数
-                    else:
-                        logger.warning("内网翻译器连接测试失败")
-                    return result
-
-            elif translator_type == 'ollama':
-                if 'ollama' in self.translators:
-                    result = self.check_ollama_service()
-                    self.connection_status['ollama'] = result
-                    if result:
-                        logger.info("Ollama连接测试成功")
-                    else:
-                        logger.warning("Ollama连接测试失败")
-                    return result
-
-        except Exception as e:
-            logger.error(f"测试{translator_type}连接时发生异常: {str(e)}")
-            self.connection_status[translator_type] = False
-
-        return False
-
-    def handle_translation_error(self, translator_type: str, error: Exception):
-        """
-        处理翻译错误，实现错误计数和自动切换逻辑
-
-        Args:
-            translator_type: 发生错误的翻译器类型
-            error: 错误对象
-        """
-        if translator_type in self.api_error_counts:
-            self.api_error_counts[translator_type] += 1
-            logger.warning(f"{translator_type}翻译错误计数: {self.api_error_counts[translator_type]}/{self.max_api_errors}")
-
-            # 如果错误次数达到阈值，切换到Ollama
-            if self.api_error_counts[translator_type] >= self.max_api_errors:
-                logger.error(f"{translator_type}连续失败{self.max_api_errors}次，自动切换到Ollama模式")
-                self.connection_status[translator_type] = False
-
-                # 如果Ollama可用，切换到Ollama
-                if self.test_translator_connection('ollama'):
-                    self.current_translator_type = 'ollama'
-                    logger.info("已成功切换到Ollama翻译器")
-                    return True
-                else:
-                    logger.error("Ollama翻译器也不可用，无法自动切换")
-                    return False
-
-        return False
-
-    def set_translator_type(self, translator_type: str):
-        """设置当前使用的翻译器类型"""
         if translator_type in ["zhipuai", "ollama", "siliconflow", "intranet"]:
+            # 可选择跳过网络检查以提高切换速度
+            if not skip_check:
+                # 在切换前检测服务状态
+                is_available = self._check_translator_availability(translator_type)
+                if not is_available:
+                    logger.warning(f"翻译器 {translator_type} 当前不可用，但仍允许切换")
+            else:
+                logger.info(f"跳过网络检查，快速切换到: {translator_type}")
+
             self.current_translator_type = translator_type
             # 更新配置文件
             self.config["current_translator_type"] = translator_type
-            config_path = find_resource_path('config.json')
+            config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.json')
             with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, ensure_ascii=False, indent=4)
+            logger.info(f"翻译器类型已切换到: {translator_type}")
+
+            # 如果启用自动测试，在切换完成后进行通讯测试
+            if auto_test:
+                try:
+                    test_result = self._check_translator_availability(translator_type)
+                    if test_result:
+                        logger.info(f"翻译器 {translator_type} 通讯测试成功")
+                    else:
+                        logger.warning(f"翻译器 {translator_type} 通讯测试失败")
+                    return test_result
+                except Exception as e:
+                    logger.error(f"翻译器 {translator_type} 通讯测试出错: {str(e)}")
+                    return False
+
             return True
         return False
+
+    def _smart_select_default_translator(self, is_intranet: bool):
+        """智能选择默认翻译器
+
+        Args:
+            is_intranet: 是否为内网环境
+        """
+        try:
+            if is_intranet:
+                # 内网环境：优先选择本地或内网翻译器，但不强制切换
+                logger.info("检测到内网环境，保持当前翻译器选择，用户可手动切换")
+                # 检查当前翻译器是否可用
+                if self.current_translator_type in self.translators:
+                    logger.info(f"当前翻译器 {self.current_translator_type} 已配置")
+                else:
+                    # 如果当前翻译器不可用，尝试选择可用的翻译器
+                    available_translators = []
+                    for trans_type in ["ollama", "intranet", "zhipuai", "siliconflow"]:
+                        if trans_type in self.translators:
+                            available_translators.append(trans_type)
+
+                    if available_translators:
+                        self.current_translator_type = available_translators[0]
+                        logger.info(f"内网环境下自动选择翻译器: {self.current_translator_type}")
+            else:
+                # 外网环境：优先使用智谱AI
+                if "zhipuai" in self.translators:
+                    self.current_translator_type = "zhipuai"
+                    logger.info("检测到外网环境，默认选择智谱AI翻译器")
+                else:
+                    # 如果智谱AI不可用，选择其他可用的翻译器
+                    available_translators = []
+                    for trans_type in ["siliconflow", "ollama", "intranet"]:
+                        if trans_type in self.translators:
+                            available_translators.append(trans_type)
+
+                    if available_translators:
+                        self.current_translator_type = available_translators[0]
+                        logger.info(f"智谱AI不可用，外网环境下自动选择翻译器: {self.current_translator_type}")
+
+        except Exception as e:
+            logger.error(f"智能选择默认翻译器失败: {str(e)}")
+            # 出错时保持当前设置
+            pass
+
+    def _check_translator_availability(self, translator_type: str) -> bool:
+        """检查指定翻译器的可用性"""
+        try:
+            if translator_type == "zhipuai":
+                return self._check_zhipuai_available()
+            elif translator_type == "ollama":
+                return self.check_ollama_service()
+            elif translator_type == "siliconflow":
+                return self.check_siliconflow_service()
+            elif translator_type == "intranet":
+                return self.check_intranet_service()
+            else:
+                logger.warning(f"未知的翻译器类型: {translator_type}")
+                return False
+        except Exception as e:
+            logger.error(f"检查翻译器 {translator_type} 可用性失败: {str(e)}")
+            return False
 
     def set_model(self, model: str):
         """设置当前翻译器使用的模型"""
@@ -438,7 +340,7 @@ class TranslationService:
             return False
 
         # 保存配置文件
-        config_path = find_resource_path('config.json')
+        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.json')
         with open(config_path, 'w', encoding='utf-8') as f:
             json.dump(self.config, f, ensure_ascii=False, indent=4)
 
@@ -512,6 +414,28 @@ class TranslationService:
 
         return []
 
+    def stop_current_operations(self):
+        """停止当前正在进行的翻译操作"""
+        try:
+            self._stop_flag = True
+            logger.info("设置停止标志，正在停止当前翻译操作...")
+
+            # 清理当前操作列表
+            self._current_operations.clear()
+
+            # 重置停止标志
+            import threading
+            def reset_flag():
+                import time
+                time.sleep(1)  # 等待1秒后重置
+                self._stop_flag = False
+                logger.info("停止标志已重置")
+
+            threading.Thread(target=reset_flag, daemon=True).start()
+
+        except Exception as e:
+            logger.error(f"停止当前操作失败: {str(e)}")
+
     def translate_text(self, text: str, terminology_dict: Optional[Dict] = None, source_lang: str = "zh", target_lang: str = "en", prompt: str = None) -> str:
         """
         翻译单个文本片段
@@ -529,6 +453,11 @@ class TranslationService:
         if not text.strip():
             return ""
 
+        # 检查是否需要停止
+        if self._stop_flag:
+            logger.info("翻译操作被停止")
+            return ""
+
         translator = self.translators.get(self.current_translator_type)
         if not translator:
             logger.error(f"未找到{self.current_translator_type}翻译器")
@@ -540,8 +469,8 @@ class TranslationService:
                 try:
                     # 检查翻译器类型并使用正确的参数调用
                     if fallback_type == "ollama" and isinstance(fallback_translator, OllamaTranslator):
-                        # OllamaTranslator.translate 方法现在支持完整参数
-                        return fallback_translator.translate(text, terminology_dict, source_lang, target_lang, prompt)
+                        # OllamaTranslator.translate 方法的参数与其他翻译器不同
+                        return fallback_translator.translate(text, terminology_dict)
                     elif isinstance(fallback_translator, (ZhipuAITranslator, SiliconFlowTranslator)):
                         return fallback_translator.translate(text, terminology_dict, source_lang, target_lang, prompt)
                     else:
@@ -553,36 +482,18 @@ class TranslationService:
             raise Exception(f"未找到可用的翻译器")
 
         try:
-            # 在翻译前先测试连接（如果尚未测试过）
-            if self.connection_status.get(self.current_translator_type) is None:
-                if not self.test_translator_connection(self.current_translator_type):
-                    raise Exception(f"{self.current_translator_type}连接测试失败")
-
             # 确保将 terminology_dict 传递给实际的翻译器
             if isinstance(translator, (ZhipuAITranslator, SiliconFlowTranslator, IntranetTranslator)):
                 return translator.translate(text, terminology_dict, source_lang, target_lang, prompt)
             elif isinstance(translator, OllamaTranslator):
-                 # OllamaTranslator.translate 方法现在支持完整参数
-                return translator.translate(text, terminology_dict, source_lang, target_lang, prompt)
+                 # OllamaTranslator.translate 方法的参数与其他翻译器不同
+                return translator.translate(text, terminology_dict)
             else:
                 # 对于其他可能的翻译器，如果它们有统一的接口
                 return translator.translate(text, terminology_dict, source_lang, target_lang, prompt)
         except Exception as e:
             logger.error(f"{self.current_translator_type}翻译失败: {str(e)}")
-
-            # 处理翻译错误，可能触发自动切换
-            if self.handle_translation_error(self.current_translator_type, e):
-                # 如果成功切换到Ollama，重新尝试翻译
-                logger.info("已切换翻译器，重新尝试翻译...")
-                new_translator = self.translators.get(self.current_translator_type)
-                if new_translator and isinstance(new_translator, OllamaTranslator):
-                    try:
-                        return new_translator.translate(text, terminology_dict, source_lang, target_lang, prompt)
-                    except Exception as retry_e:
-                        logger.error(f"切换后的翻译器也失败: {str(retry_e)}")
-                        raise Exception(f"原翻译器失败: {str(e)}; 切换后翻译器失败: {str(retry_e)}")
-
-            # 如果没有自动切换或切换失败，尝试手动备用翻译器
+            # 尝试切换到备用翻译器
             fallback_type = "ollama" if self.current_translator_type != "ollama" else "zhipuai"
             fallback_translator = self.translators.get(fallback_type)
             if fallback_translator:
@@ -590,8 +501,8 @@ class TranslationService:
                 try:
                     # 检查翻译器类型并使用正确的参数调用
                     if fallback_type == "ollama" and isinstance(fallback_translator, OllamaTranslator):
-                        # OllamaTranslator.translate 方法现在支持完整参数
-                        return fallback_translator.translate(text, terminology_dict, source_lang, target_lang, prompt)
+                        # OllamaTranslator.translate 方法的参数与其他翻译器不同
+                        return fallback_translator.translate(text, terminology_dict)
                     elif isinstance(fallback_translator, (ZhipuAITranslator, SiliconFlowTranslator, IntranetTranslator)):
                         return fallback_translator.translate(text, terminology_dict, source_lang, target_lang, prompt)
                     else:
@@ -606,33 +517,8 @@ class TranslationService:
         """检查Ollama服务是否可用"""
         try:
             if isinstance(self.translators["ollama"], OllamaTranslator):
-                # 获取可用模型列表
                 models = self.translators["ollama"].get_available_models()
-                if len(models) == 0:
-                    logger.warning("Ollama服务运行中，但没有可用的模型")
-                    return False
-
-                # 检查配置的模型是否存在
-                configured_model = self.translators["ollama"].model
-                if configured_model not in models:
-                    logger.warning(f"配置的Ollama模型 '{configured_model}' 不存在")
-                    logger.info(f"可用的Ollama模型: {models}")
-
-                    # 尝试使用第一个可用的模型
-                    if models:
-                        # 过滤掉无效的模型名
-                        valid_models = [m for m in models if m not in ['failed', 'NAME'] and ':' in m]
-                        if valid_models:
-                            new_model = valid_models[0]
-                            logger.info(f"自动切换到可用模型: {new_model}")
-                            self.translators["ollama"].model = new_model
-                            # 更新配置
-                            self.config['fallback_translator']['model'] = new_model
-                            return True
-                    return False
-
-                logger.info(f"Ollama模型 '{configured_model}' 验证成功")
-                return True
+                return len(models) > 0
             return False
         except Exception as e:
             logger.error(f"检查Ollama服务状态失败: {str(e)}")
@@ -738,32 +624,35 @@ class TranslationService:
             print(f"导出Excel文件时出错: {e}")
             return None
 
-    def _init_ollama_translator(self):
-        """初始化Ollama翻译器"""
+    def _init_ollama_translator(self, preferred_model=None):
+        """
+        初始化Ollama翻译器
+
+        Args:
+            preferred_model: 用户首选的模型名称
+        """
         try:
             # 从单独的配置文件读取API URL
-            api_config_dir = find_resource_path("API_config")
+            api_config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "API_config")
             ollama_config_path = os.path.join(api_config_dir, "ollama_api.json")
             api_url = "http://localhost:11434"  # 默认值
 
-            logger.debug(f"查找Ollama配置文件: {ollama_config_path}")
             if os.path.exists(ollama_config_path):
                 try:
                     with open(ollama_config_path, "r", encoding="utf-8") as f:
                         ollama_config = json.load(f)
                         api_url = ollama_config.get("api_url", api_url)
-                        logger.info(f"成功读取Ollama配置，API URL: {api_url}")
                 except Exception as e:
                     logger.error(f"读取Ollama API配置失败: {str(e)}")
-            else:
-                logger.info(f"Ollama配置文件不存在，使用默认URL: {api_url}")
 
             if api_url:
                 ollama_config = self.config.get("fallback_translator", {})
-                model = ollama_config.get("model", "")
+                # 优先使用用户选择的模型，否则使用配置文件中的模型
+                model = preferred_model or ollama_config.get("model", "")
                 model_list_timeout = ollama_config.get("model_list_timeout", 10)
                 translate_timeout = ollama_config.get("translate_timeout", 60)
 
+                logger.info(f"初始化Ollama翻译器，使用模型: {model}")
                 return OllamaTranslator(
                     model=model,
                     api_url=api_url,
@@ -772,92 +661,97 @@ class TranslationService:
                 )
         except Exception as e:
             logger.error(f"初始化Ollama翻译器失败: {str(e)}")
-            logger.error(traceback.format_exc())
         return None
 
-    def _init_siliconflow_translator(self):
-        """初始化硅基流动翻译器"""
+    def _init_siliconflow_translator(self, preferred_model=None):
+        """
+        初始化硅基流动翻译器
+
+        Args:
+            preferred_model: 用户首选的模型名称
+        """
         try:
             # 从单独的配置文件读取API key
-            api_config_dir = find_resource_path("API_config")
+            api_config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "API_config")
             siliconflow_config_path = os.path.join(api_config_dir, "siliconflow_api.json")
             api_key = ""
 
-            logger.debug(f"查找硅基流动配置文件: {siliconflow_config_path}")
             if os.path.exists(siliconflow_config_path):
                 try:
                     with open(siliconflow_config_path, "r", encoding="utf-8") as f:
                         siliconflow_config = json.load(f)
                         api_key = siliconflow_config.get("api_key", "")
-                        logger.info(f"成功读取硅基流动配置，API Key前缀: {api_key[:8]}..." if api_key else "API Key为空")
                 except Exception as e:
                     logger.error(f"读取硅基流动API配置失败: {str(e)}")
-            else:
-                logger.warning(f"硅基流动配置文件不存在: {siliconflow_config_path}")
 
             if api_key:
                 siliconflow_config = self.config.get("siliconflow_translator", {})
-                model = siliconflow_config.get("model", "deepseek-ai/DeepSeek-V3")
+                # 优先使用用户选择的模型，否则使用配置文件中的模型
+                model = preferred_model or siliconflow_config.get("model", "deepseek-ai/DeepSeek-V3")
                 timeout = siliconflow_config.get("timeout", 60)
 
+                logger.info(f"初始化硅基流动翻译器，使用模型: {model}")
                 return SiliconFlowTranslator(
                     api_key=api_key,
                     model=model,
                     timeout=timeout
                 )
-            else:
-                logger.warning("硅基流动API密钥未配置")
         except Exception as e:
             logger.error(f"初始化硅基流动翻译器失败: {str(e)}")
-            logger.error(traceback.format_exc())
         return None
 
-    def _init_zhipuai_translator(self):
-        """初始化智谱AI翻译器"""
+    def _init_zhipuai_translator(self, preferred_model=None):
+        """
+        初始化智谱AI翻译器
+
+        Args:
+            preferred_model: 用户首选的模型名称
+        """
         try:
             # 从单独的配置文件读取API key
-            api_config_dir = find_resource_path("API_config")
+            api_config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "API_config")
             zhipu_config_path = os.path.join(api_config_dir, "zhipu_api.json")
             api_key = ""
 
-            logger.debug(f"查找智谱AI配置文件: {zhipu_config_path}")
             if os.path.exists(zhipu_config_path):
                 try:
                     with open(zhipu_config_path, "r", encoding="utf-8") as f:
                         zhipu_config = json.load(f)
                         api_key = zhipu_config.get("api_key", "")
-                        logger.info(f"成功读取智谱AI配置，API Key前缀: {api_key[:8]}..." if api_key else "API Key为空")
                 except Exception as e:
                     logger.error(f"读取智谱API配置失败: {str(e)}")
-            else:
-                logger.warning(f"智谱AI配置文件不存在: {zhipu_config_path}")
 
             if api_key:
                 zhipuai_config = self.config.get("zhipuai_translator", {})
-                model = zhipuai_config.get("model", "glm-4-flash")
+                # 优先使用用户选择的模型，否则使用配置文件中的模型
+                model = preferred_model or zhipuai_config.get("model", "glm-4-flash-250414")
                 temperature = zhipuai_config.get("temperature", 0.2)
 
+                logger.info(f"初始化智谱AI翻译器，使用模型: {model}")
                 return ZhipuAITranslator(
-                    api_key=api_key,
                     model=model,
                     temperature=temperature
                 )
-            else:
-                logger.warning("智谱AI API密钥未配置")
         except Exception as e:
             logger.error(f"初始化智谱AI翻译器失败: {str(e)}")
-            logger.error(traceback.format_exc())
         return None
 
-    def _init_intranet_translator(self):
-        """初始化内网翻译器"""
+    def _init_intranet_translator(self, preferred_model=None):
+        """
+        初始化内网翻译器
+
+        Args:
+            preferred_model: 用户首选的模型名称
+        """
         try:
             intranet_config = self.config.get("intranet_translator", {})
             api_url = intranet_config.get("api_url", "")
-            model = intranet_config.get("model", "deepseek-r1-70b")
+            # 优先使用用户选择的模型，否则使用配置文件中的模型
+            model = preferred_model or intranet_config.get("model", "deepseek-r1-70b")
             timeout = intranet_config.get("timeout", 60)
 
             if api_url:
+                logger.info(f"初始化内网翻译器，使用模型: {model}")
                 return IntranetTranslator(
                     api_url=api_url,
                     model=model,
@@ -938,28 +832,12 @@ class TranslationService:
         try:
             primary_config = self.config['primary_translator']
             if primary_config['type'] == 'zhipuai':
-                # 使用ZhipuAITranslator作为主要翻译器，从API配置文件读取密钥
-                api_config_dir = find_resource_path("API_config")
-                zhipu_config_path = os.path.join(api_config_dir, "zhipu_api.json")
-                api_key = ""
-
-                if os.path.exists(zhipu_config_path):
-                    try:
-                        with open(zhipu_config_path, "r", encoding="utf-8") as f:
-                            zhipu_config = json.load(f)
-                            api_key = zhipu_config.get("api_key", "")
-                    except Exception as e:
-                        logger.error(f"读取智谱API配置失败: {str(e)}")
-
-                if not api_key:
-                    logger.warning("智谱AI API密钥未配置，跳过主要翻译器初始化")
-                    return None
-
+                # 使用ZhipuAITranslator作为主要翻译器
+                api_key = primary_config.get('api_key', '')
                 model = primary_config.get('model', 'glm-4-flash')
                 temperature = primary_config.get('temperature', 0.3)
 
                 return ZhipuAITranslator(
-                    api_key=api_key,
                     model=model,
                     temperature=temperature
                 )

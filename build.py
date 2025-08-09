@@ -9,9 +9,13 @@ import PyInstaller.__main__
 import os
 import shutil
 import sys
+import site
+import platform
+import pkg_resources
 import subprocess
 import json
 import logging
+from pathlib import Path
 
 # 设置日志
 logging.basicConfig(
@@ -122,7 +126,30 @@ def check_dependencies():
     else:
         logger.info("✓ 所有依赖已满足")
 
+def get_package_paths():
+    """获取所有依赖包的路径"""
+    package_paths = []
+    installed = get_installed_packages()
 
+    for dist in pkg_resources.working_set:
+        if dist.key.lower() in installed:
+            try:
+                # 获取包的位置
+                location = dist.location
+                if location and os.path.exists(location):
+                    if os.path.isfile(location):
+                        package_paths.append((location, '.'))
+                    else:
+                        for root, _, files in os.walk(location):
+                            for file in files:
+                                if file.endswith('.dll') or file.endswith('.pyd'):
+                                    full_path = os.path.join(root, file)
+                                    rel_path = os.path.relpath(root, location)
+                                    package_paths.append((full_path, rel_path))
+            except Exception as e:
+                print(f"警告: 处理包 {dist.key} 时出错: {e}")
+
+    return package_paths
 
 def clean_dist():
     """清理之前的构建文件"""
@@ -146,12 +173,75 @@ def clean_dist():
 
     logger.info("✓ 清理完成")
 
+def copy_resources(dist_path):
+    """复制必要的资源文件"""
+    logger.info("复制资源文件...")
 
+    # 创建data目录
+    data_dir = os.path.join(dist_path, 'data')
+    os.makedirs(data_dir, exist_ok=True)
 
-def build_final_exe():
-    """构建最终的多文档术语翻译器.exe文件"""
+    # 复制术语库文件
+    if os.path.exists('data/terminology.json'):
+        shutil.copy2('data/terminology.json', os.path.join(data_dir, 'terminology.json'))
+        logger.info("✓ 复制术语库文件")
+
+    # 复制配置文件
+    if os.path.exists('config.json'):
+        shutil.copy2('config.json', os.path.join(dist_path, 'config.json'))
+        logger.info("✓ 复制配置文件")
+
+    # 复制图标文件
+    if os.path.exists('logo.ico'):
+        shutil.copy2('logo.ico', os.path.join(dist_path, 'logo.ico'))
+        logger.info("✓ 复制图标文件")
+
+    # 复制Web静态文件
+    web_static_dir = os.path.join(dist_path, 'web', 'static')
+    if os.path.exists('web/static'):
+        os.makedirs(web_static_dir, exist_ok=True)
+        shutil.copytree('web/static', web_static_dir, dirs_exist_ok=True)
+        logger.info("✓ 复制Web静态文件")
+
+    # 复制Web模板文件
+    web_templates_dir = os.path.join(dist_path, 'web', 'templates')
+    if os.path.exists('web/templates'):
+        os.makedirs(web_templates_dir, exist_ok=True)
+        shutil.copytree('web/templates', web_templates_dir, dirs_exist_ok=True)
+        logger.info("✓ 复制Web模板文件")
+
+def get_python_dlls():
+    """获取Python DLL文件路径"""
+    python_dlls = []
+    if platform.system() == 'Windows':
+        python_path = os.path.dirname(sys.executable)
+        for file in os.listdir(python_path):
+            if file.lower().startswith('python') and file.lower().endswith('.dll'):
+                python_dlls.append(os.path.join(python_path, file))
+    return python_dlls
+
+def embed_resources():
+    """将资源文件嵌入到临时目录"""
+    temp_dir = os.path.join('build', 'temp_resources')
+    os.makedirs(temp_dir, exist_ok=True)
+
+    # 复制并处理资源文件
+    if os.path.exists('data/terminology.json'):
+        os.makedirs(os.path.join(temp_dir, 'data'), exist_ok=True)
+        shutil.copy2('data/terminology.json', os.path.join(temp_dir, 'data', 'terminology.json'))
+
+    if os.path.exists('config.json'):
+        shutil.copy2('config.json', os.path.join(temp_dir, 'config.json'))
+
+    if os.path.exists('logo.ico'):
+        shutil.copy2('logo.ico', os.path.join(temp_dir, 'logo.ico'))
+
+    return temp_dir
+
+def build_launcher_exe():
+    """构建启动器EXE文件"""
     logger.info("=" * 60)
-    logger.info("开始构建多文档术语翻译器.exe")
+    logger.info("开始构建启动器EXE文件")
     logger.info("=" * 60)
 
     # 检查并安装依赖
@@ -160,32 +250,22 @@ def build_final_exe():
     # 清理旧文件
     clean_dist()
 
-    # 确保必要的目录存在
-    os.makedirs('build', exist_ok=True)
+    # 创建临时资源目录
+    temp_resources = embed_resources()
 
     try:
-        # PyInstaller参数 - 最终版本
-        final_params = [
-            'launcher.py',  # 使用启动器作为入口点
-            '--name=多文档术语翻译器',  # 最终的程序名称
+        # PyInstaller参数 - 启动器
+        launcher_params = [
+            'launcher.py',  # 启动器文件
+            '--name=多格式文档翻译助手-启动器',
             '--icon=logo.ico',
-            '--console',  # 改为控制台模式，支持Web服务器启动
+            '--windowed',  # GUI应用，不显示控制台
             '--onefile',  # 生成单个文件
             '--clean',
             '--noconfirm',
-            # 添加必要的数据文件
-            '--add-data=data/terminology.json;data',
-            '--add-data=config.json;.',
-            '--add-data=logo.ico;.',
-            '--add-data=API_config;API_config',
-            # 添加整个项目目录
-            '--add-data=services;services',
-            '--add-data=utils;utils',
-            '--add-data=web;web',
-            '--add-data=ui;ui',
-            '--add-data=main.py;.',
-            '--add-data=web_server.py;.',
-            # 添加必要的隐藏导入
+            # 添加资源文件
+            f'--add-data=logo.ico;.',
+            # 添加隐藏导入
             '--hidden-import=tkinter',
             '--hidden-import=tkinter.ttk',
             '--hidden-import=tkinter.messagebox',
@@ -194,18 +274,76 @@ def build_final_exe():
             '--hidden-import=subprocess',
             '--hidden-import=threading',
             '--hidden-import=pathlib',
+            # 排除不需要的模块
+            '--exclude-module=matplotlib',
+            '--exclude-module=numpy',
+            '--exclude-module=pandas',
+            '--exclude-module=PIL',
+            '--exclude-module=cv2',
+        ]
+
+        logger.info("开始打包启动器...")
+        PyInstaller.__main__.run(launcher_params)
+
+        launcher_exe = os.path.join('dist', '多格式文档翻译助手-启动器.exe')
+        if os.path.exists(launcher_exe):
+            logger.info(f"✓ 启动器构建完成: {os.path.abspath(launcher_exe)}")
+        else:
+            raise Exception("启动器构建失败：未找到生成的EXE文件")
+
+    except Exception as e:
+        logger.error(f"构建启动器失败: {e}")
+        raise
+    finally:
+        # 清理临时文件
+        if os.path.exists('runtime_hook.py'):
+            os.remove('runtime_hook.py')
+
+def build_main_exe():
+    """构建主程序EXE文件"""
+    logger.info("=" * 60)
+    logger.info("开始构建主程序EXE文件")
+    logger.info("=" * 60)
+
+    # 创建临时资源目录
+    temp_resources = embed_resources()
+
+    try:
+        # PyInstaller参数 - 主程序
+        main_params = [
+            'launcher.py',  # 使用启动器作为入口点
+            '--name=多格式文档翻译助手',
+            '--icon=logo.ico',
+            '--windowed',  # GUI应用
+            '--onedir',  # 生成目录形式，包含所有依赖
+            '--clean',
+            '--noconfirm',
+            # 添加必要的数据文件
+            f'--add-data={os.path.join(temp_resources, "data/terminology.json")};data',
+            f'--add-data={os.path.join(temp_resources, "config.json")};.',
+            f'--add-data={os.path.join(temp_resources, "logo.ico")};.',
+            # 添加整个项目目录
+            '--add-data=services;services',
+            '--add-data=utils;utils',
+            '--add-data=web;web',
+            '--add-data=main.py;.',
+            '--add-data=web_server.py;.',
+            # 添加必要的隐藏导入
             '--hidden-import=pandas',
             '--hidden-import=openpyxl',
             '--hidden-import=python-docx',
             '--hidden-import=docx',
-            '--hidden-import=PyMuPDF',
-            '--hidden-import=fitz',
-            '--hidden-import=python-pptx',
-            '--hidden-import=pptx',
             '--hidden-import=cryptography',
             '--hidden-import=requests',
             '--hidden-import=chardet',
             '--hidden-import=psutil',
+            '--hidden-import=win32api',
+            '--hidden-import=win32con',
+            '--hidden-import=win32security',
+            '--hidden-import=win32com',
+            '--hidden-import=win32com.client',
+            '--hidden-import=pythoncom',
+            '--hidden-import=pywintypes',
             '--hidden-import=services.translator',
             '--hidden-import=services.ollama_translator',
             '--hidden-import=services.zhipuai_translator',
@@ -214,68 +352,64 @@ def build_final_exe():
             '--hidden-import=services.excel_processor',
             '--hidden-import=services.document_processor',
             '--hidden-import=services.pdf_processor',
-            '--hidden-import=services.ppt_processor',
-            '--hidden-import=services.intranet_translator',
-            '--hidden-import=utils.terminology',
-            '--hidden-import=utils.api_config',
-            '--hidden-import=utils.license',
-            '--hidden-import=utils.ui_logger',
             '--hidden-import=fastapi',
             '--hidden-import=uvicorn',
             '--hidden-import=websockets',
             '--hidden-import=jinja2',
             '--hidden-import=aiofiles',
-            '--hidden-import=starlette',
-            '--hidden-import=pydantic',
-            '--hidden-import=openai',
-            '--hidden-import=ollama',
-            '--hidden-import=httpx',
-            '--hidden-import=PIL',
-            '--hidden-import=Pillow',
-            '--hidden-import=numpy',
-            '--hidden-import=jieba',
+            # 添加运行时钩子
+            '--runtime-hook=runtime_hook.py',
             # 排除不需要的模块
             '--exclude-module=matplotlib',
             '--exclude-module=notebook',
             '--exclude-module=jupyter',
-            '--exclude-module=IPython',
-            '--exclude-module=scipy',
-            '--exclude-module=sklearn',
-            '--exclude-module=tensorflow',
-            '--exclude-module=torch',
             # 优化设置
-            '--noupx',  # 不使用UPX压缩，避免兼容性问题
+            '--noupx',  # 不使用UPX压缩
         ]
 
-        logger.info("开始打包最终程序...")
-        PyInstaller.__main__.run(final_params)
+        # 创建运行时钩子文件
+        with open('runtime_hook.py', 'w', encoding='utf-8') as f:
+            f.write("""
+import os
+import sys
 
-        final_exe = os.path.join('dist', '多文档术语翻译器.exe')
-        if os.path.exists(final_exe):
-            size = os.path.getsize(final_exe) / (1024 * 1024)  # MB
-            logger.info(f"✓ 最终程序构建完成: {os.path.abspath(final_exe)} ({size:.1f} MB)")
+def _append_paths():
+    if hasattr(sys, '_MEIPASS'):
+        os.environ['PATH'] = sys._MEIPASS + os.pathsep + os.environ['PATH']
+
+_append_paths()
+""")
+
+        logger.info("开始打包主程序...")
+        PyInstaller.__main__.run(main_params)
+
+        # 获取生成的EXE文件路径
+        exe_path = os.path.join('dist', '多格式文档翻译助手', '多格式文档翻译助手.exe')
+        if os.path.exists(exe_path):
+            logger.info(f"✓ 主程序构建完成: {os.path.abspath(exe_path)}")
         else:
-            raise Exception("最终程序构建失败：未找到生成的EXE文件")
+            raise Exception("主程序构建失败：未找到生成的EXE文件")
 
     except Exception as e:
-        logger.error(f"构建最终程序失败: {e}")
+        logger.error(f"构建主程序失败: {e}")
         raise
     finally:
         # 清理临时文件
         if os.path.exists('runtime_hook.py'):
             os.remove('runtime_hook.py')
 
-
-
 def build_all():
-    """构建最终的多文档术语翻译器.exe"""
+    """构建完整的应用程序包"""
     logger.info("=" * 60)
-    logger.info("开始构建多文档术语翻译器")
+    logger.info("开始构建完整的应用程序包")
     logger.info("=" * 60)
 
     try:
-        # 构建最终的可执行文件
-        build_final_exe()
+        # 1. 构建启动器
+        build_launcher_exe()
+
+        # 2. 构建主程序
+        # build_main_exe()  # 暂时注释掉，只构建启动器
 
         logger.info("=" * 60)
         logger.info("✓ 构建完成！")
@@ -294,15 +428,6 @@ def build_all():
                     logger.info(f"  - {item} ({size:.1f} MB)")
                 else:
                     logger.info(f"  - {item}/ (目录)")
-
-        # 提示用户
-        final_exe = os.path.join(dist_dir, '多文档术语翻译器.exe')
-        if os.path.exists(final_exe):
-            logger.info("=" * 60)
-            logger.info("🎉 打包成功！")
-            logger.info(f"可执行文件位置: {final_exe}")
-            logger.info("您可以直接运行这个EXE文件来使用多文档术语翻译器")
-            logger.info("=" * 60)
 
     except Exception as e:
         logger.error(f"构建失败: {e}")

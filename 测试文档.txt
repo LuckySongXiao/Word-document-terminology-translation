@@ -1,0 +1,19 @@
+这是一个测试文档，用于验证C#版本的翻译功能。
+
+主要内容：
+1. 文档格式检测功能
+2. 处理器选择逻辑
+3. 输出文件扩展名处理
+4. 详细日志记录功能
+
+测试目标：
+- 验证Word文档(.docx)能正确输出为.docx格式
+- 验证Excel文档(.xlsx)能正确输出为.xlsx格式
+- 验证文件格式检测功能正常工作
+- 验证详细日志记录功能
+
+专业术语测试：
+- 人工智能 (Artificial Intelligence)
+- 机器学习 (Machine Learning)
+- 深度学习 (Deep Learning)
+- 自然语言处理 (Natural Language Processing)

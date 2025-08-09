@@ -19,6 +19,7 @@ from services.translator import TranslationService
 from services.document_factory import DocumentProcessorFactory
 from utils.terminology import load_terminology, save_terminology, TERMINOLOGY_PATH
 from web.realtime_logger import realtime_monitor, start_realtime_monitoring, stop_realtime_monitoring
+from utils.terminal_capture import get_terminal_capture, add_output_callback, remove_output_callback
 
 # 简化日志配置，避免与web_server.py冲突
 logger = logging.getLogger(__name__)
@@ -152,49 +153,22 @@ translation_tasks = {}
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
-        self._lock = threading.Lock()  # 添加线程锁保护连接字典
 
     async def connect(self, websocket: WebSocket, client_id: str):
         await websocket.accept()
-        with self._lock:
-            self.active_connections[client_id] = websocket
+        self.active_connections[client_id] = websocket
 
     def disconnect(self, client_id: str):
-        with self._lock:
-            if client_id in self.active_connections:
-                del self.active_connections[client_id]
+        if client_id in self.active_connections:
+            del self.active_connections[client_id]
 
     async def send_message(self, client_id: str, message: str):
-        websocket = None
-        with self._lock:
-            if client_id in self.active_connections:
-                websocket = self.active_connections[client_id]
-
-        # 在锁外发送消息，避免阻塞
-        if websocket:
-            try:
-                await websocket.send_text(message)
-            except Exception:
-                # 如果发送失败，移除连接
-                self.disconnect(client_id)
+        if client_id in self.active_connections:
+            await self.active_connections[client_id].send_text(message)
 
     async def broadcast(self, message: str):
-        # 在锁内创建连接列表的副本，避免在遍历时字典被修改
-        with self._lock:
-            connections_items = list(self.active_connections.items())
-
-        # 在锁外发送消息，避免阻塞
-        failed_clients = []
-        for client_id, connection in connections_items:
-            try:
-                await connection.send_text(message)
-            except Exception:
-                # 记录失败的客户端，稍后移除
-                failed_clients.append(client_id)
-
-        # 移除失败的连接
-        for client_id in failed_clients:
-            self.disconnect(client_id)
+        for connection in self.active_connections.values():
+            await connection.send_text(message)
 
 # 创建连接管理器实例
 manager = ConnectionManager()
@@ -246,6 +220,9 @@ class GlobalWebSocketLogHandler(logging.Handler):
         with self._lock:
             self.pending_logs.append(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - web.api - {init_msg}")
 
+        # 设置终端捕获回调函数
+        self.setup_terminal_capture()
+
     def emit(self, record):
         # 过滤掉一些不需要发送到前端的日志
         if record.name.startswith('uvicorn') or record.name.startswith('fastapi'):
@@ -254,34 +231,65 @@ class GlobalWebSocketLogHandler(logging.Handler):
         try:
             log_entry = self.format(record)
 
-            # 确保日志同时输出到终端控制台（实时同步）
-            import sys
-            sys.stdout.write(f"{log_entry}\n")
-            sys.stdout.flush()  # 立即刷新输出缓冲区
-
-            # 检查是否在异步环境中，发送到Web界面
-            try:
-                asyncio.get_running_loop()
-                asyncio.create_task(self.broadcast_log(log_entry))
-            except RuntimeError:
-                # 存储到待发送队列
-                with self._lock:
-                    if len(self.pending_logs) >= self.max_pending_logs:
-                        self.pending_logs.pop(0)
-                    self.pending_logs.append(log_entry)
+            # 简化日志处理，避免异步问题
+            # 只将日志存储到待发送队列中
+            with self._lock:
+                # 限制待发送日志数量，防止内存溢出
+                if len(self.pending_logs) >= self.max_pending_logs:
+                    self.pending_logs.pop(0)  # 移除最旧的日志
+                self.pending_logs.append(log_entry)
         except Exception as e:
-            import sys
-            sys.stderr.write(f"日志处理失败: {str(e)}\n")
-            sys.stderr.flush()
+            # 确保日志处理器不会因为异常而中断程序
+            pass  # 静默处理错误，避免循环日志
+
+    def setup_terminal_capture(self):
+        """设置终端捕获"""
+        try:
+            def terminal_output_callback(log_entry):
+                """处理终端输出的回调函数"""
+                try:
+                    # 格式化消息
+                    timestamp = log_entry.get('timestamp', '')
+                    level = log_entry.get('level', 'INFO')
+                    message = log_entry.get('message', '')
+
+                    # 创建格式化的日志消息
+                    formatted_message = f"{timestamp} - {level} - terminal - {message}"
+
+                    # 添加到待发送队列
+                    with self._lock:
+                        if len(self.pending_logs) >= self.max_pending_logs:
+                            self.pending_logs.pop(0)
+                        self.pending_logs.append(formatted_message)
+
+                    # 如果有活跃连接，立即广播
+                    if manager.active_connections:
+                        try:
+                            asyncio.create_task(self.broadcast_log(formatted_message))
+                        except RuntimeError:
+                            # 不在异步环境中，忽略
+                            pass
+
+                except Exception:
+                    pass
+
+            # 启动终端捕获并添加回调
+            terminal_capture = get_terminal_capture()
+            terminal_capture.start_capture()
+            add_output_callback(terminal_output_callback)
+
+            # 存储回调函数引用
+            self.terminal_callback = terminal_output_callback
+
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INFO - 终端输出捕获已启动，输出将同步到Web界面")
+
+        except Exception as e:
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ERROR - 启动终端捕获失败: {e}")
 
     async def broadcast_log(self, log_entry):
         # 向所有连接的客户端广播日志
         try:
-            # 安全地检查是否有活跃连接
-            with manager._lock:
-                active_connections_count = len(manager.active_connections)
-
-            if active_connections_count > 0:
+            if manager.active_connections:
                 await manager.broadcast(json.dumps({
                     "type": "system_log",
                     "data": log_entry
@@ -330,56 +338,8 @@ global_ws_handler = GlobalWebSocketLogHandler()
 root_logger = logging.getLogger()
 root_logger.addHandler(global_ws_handler)
 
-# 特别为所有翻译相关的日志记录器添加处理器，确保翻译过程日志能够被捕获
+# 特别为web_logger添加处理器，确保web_logger的日志能够被捕获
 web_logger = logging.getLogger('web_logger')
-web_logger.addHandler(global_ws_handler)
-
-# 翻译服务相关的日志记录器
-translator_logger = logging.getLogger('services.translator')
-translator_logger.addHandler(global_ws_handler)
-
-document_processor_logger = logging.getLogger('services.document_processor')
-document_processor_logger.addHandler(global_ws_handler)
-
-pdf_processor_logger = logging.getLogger('services.pdf_processor')
-pdf_processor_logger.addHandler(global_ws_handler)
-
-excel_processor_logger = logging.getLogger('services.excel_processor')
-excel_processor_logger.addHandler(global_ws_handler)
-
-ppt_processor_logger = logging.getLogger('services.ppt_processor')
-ppt_processor_logger.addHandler(global_ws_handler)
-
-# 基础翻译器日志记录器
-base_translator_logger = logging.getLogger('services.base_translator')
-base_translator_logger.addHandler(global_ws_handler)
-
-zhipuai_translator_logger = logging.getLogger('services.zhipuai_translator')
-zhipuai_translator_logger.addHandler(global_ws_handler)
-
-ollama_translator_logger = logging.getLogger('services.ollama_translator')
-ollama_translator_logger.addHandler(global_ws_handler)
-
-siliconflow_translator_logger = logging.getLogger('services.siliconflow_translator')
-siliconflow_translator_logger.addHandler(global_ws_handler)
-
-intranet_translator_logger = logging.getLogger('services.intranet_translator')
-intranet_translator_logger.addHandler(global_ws_handler)
-
-# Web服务器日志记录器
-web_server_logger = logging.getLogger('web_server')
-web_server_logger.addHandler(global_ws_handler)
-
-# 确保所有日志记录器的级别都设置为INFO或更低，以便捕获翻译过程日志
-for logger_name in [
-    'web_logger', 'services.translator', 'services.document_processor',
-    'services.pdf_processor', 'services.excel_processor', 'services.ppt_processor',
-    'services.base_translator', 'services.zhipuai_translator', 'services.ollama_translator',
-    'services.siliconflow_translator', 'services.intranet_translator', 'web_server'
-]:
-    logger_instance = logging.getLogger(logger_name)
-    if logger_instance.level > logging.INFO:
-        logger_instance.setLevel(logging.INFO)
 web_logger.addHandler(global_ws_handler)
 web_logger.setLevel(logging.INFO)
 # 确保web_logger的日志会传播到父级记录器
@@ -421,22 +381,6 @@ async def get_translators():
     }
     return translators
 
-@app.get("/api/translator/current")
-async def get_current_translator():
-    """获取当前翻译器设置（不检测连接状态）"""
-    if not translator:
-        return {"success": False, "message": "翻译服务尚未初始化"}
-
-    try:
-        current_type = translator.get_current_translator_type()
-        return {
-            "success": True,
-            "current": current_type
-        }
-    except Exception as e:
-        logger.error(f"获取当前翻译器设置失败: {e}")
-        return {"success": False, "message": str(e)}
-
 @app.post("/api/translator/set")
 async def set_translator(translator_type: str = Form(...)):
     """设置当前翻译器"""
@@ -444,84 +388,29 @@ async def set_translator(translator_type: str = Form(...)):
         raise HTTPException(status_code=503, detail="翻译服务尚未初始化")
 
     try:
-        logger.info(f"用户选择翻译器: {translator_type}，正在进行连接测试...")
+        # 如果选择内网翻译器，先检查连接状态
+        if translator_type == "intranet":
+            logger.info("用户选择内网翻译器，正在检查连接状态...")
+            is_available = translator.check_intranet_service()
+            if not is_available:
+                logger.warning("内网翻译器连接检测失败，但仍允许用户选择")
+                # 不阻止用户选择，只是记录警告
 
-        # 测试选择的翻译器连接
-        connection_success = translator.test_translator_connection(translator_type)
+        translator.set_translator_type(translator_type)
 
-        if connection_success:
-            logger.info(f"{translator_type}连接测试成功，设置为当前翻译器")
-            translator.set_translator_type(translator_type)
+        # 返回设置结果，包含连接状态信息
+        result = {"success": True, "message": f"已设置翻译器为: {translator_type}"}
 
-            result = {
-                "success": True,
-                "message": f"已设置翻译器为: {translator_type}",
-                "connection_status": "connected"
-            }
-        else:
-            logger.warning(f"{translator_type}连接测试失败")
-
-            # 对于在线API，如果连接失败，询问用户是否要切换到Ollama
-            if translator_type in ['zhipuai', 'siliconflow', 'intranet']:
-                # 检查Ollama是否可用
-                ollama_available = translator.test_translator_connection('ollama')
-                if ollama_available:
-                    logger.info(f"{translator_type}连接失败，建议切换到Ollama")
-                    result = {
-                        "success": False,
-                        "message": f"{translator_type}连接失败，建议切换到本地Ollama模型",
-                        "connection_status": "failed",
-                        "fallback_available": True,
-                        "fallback_type": "ollama"
-                    }
-                else:
-                    result = {
-                        "success": False,
-                        "message": f"{translator_type}连接失败，且Ollama也不可用",
-                        "connection_status": "failed",
-                        "fallback_available": False
-                    }
-            else:
-                # 对于Ollama，如果失败就直接报错
-                result = {
-                    "success": False,
-                    "message": f"{translator_type}连接失败，请检查服务状态",
-                    "connection_status": "failed",
-                    "fallback_available": False
-                }
+        if translator_type == "intranet":
+            is_available = translator.check_intranet_service()
+            result["intranet_status"] = "available" if is_available else "unavailable"
+            if not is_available:
+                result["warning"] = "内网服务当前不可用，请检查网络连接和服务状态"
 
         return result
     except Exception as e:
         logger.error(f"设置翻译器失败: {str(e)}")
         raise HTTPException(status_code=400, detail=f"设置翻译器失败: {str(e)}")
-
-@app.post("/api/translator/fallback")
-async def switch_to_fallback():
-    """切换到备用翻译器（Ollama）"""
-    if not translator:
-        raise HTTPException(status_code=503, detail="翻译服务尚未初始化")
-
-    try:
-        logger.info("用户确认切换到Ollama翻译器")
-
-        # 测试Ollama连接
-        if translator.test_translator_connection('ollama'):
-            translator.set_translator_type('ollama')
-            logger.info("已成功切换到Ollama翻译器")
-            return {
-                "success": True,
-                "message": "已切换到Ollama翻译器",
-                "translator_type": "ollama"
-            }
-        else:
-            logger.error("Ollama翻译器连接失败")
-            return {
-                "success": False,
-                "message": "Ollama翻译器连接失败，请检查Ollama服务状态"
-            }
-    except Exception as e:
-        logger.error(f"切换到备用翻译器失败: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"切换失败: {str(e)}")
 
 @app.get("/api/intranet/status")
 async def check_intranet_status():
@@ -640,7 +529,6 @@ async def translate_document(
     preprocess_terms: bool = Form(False),
     export_pdf: bool = Form(False),
     output_format: str = Form("bilingual"),
-    skip_translated_content: bool = Form(True),
     client_id: str = Form(None),
     translation_direction: str = Form(None)
 ):
@@ -709,7 +597,6 @@ async def translate_document(
         logger.info(f"  - 客户端ID: {client_id}")
         logger.info(f"  - 使用术语库: {use_terminology}")
         logger.info(f"  - 术语预处理: {preprocess_terms}")
-        logger.info(f"  - 跳过已翻译内容: {skip_translated_content}")
 
         # 在后台执行翻译任务
         try:
@@ -724,7 +611,6 @@ async def translate_document(
                 preprocess_terms,
                 export_pdf,
                 output_format,
-                skip_translated_content,
                 client_id,
                 translation_direction
             )
@@ -749,7 +635,6 @@ async def process_translation(
     preprocess_terms: bool = False,
     export_pdf: bool = False,
     output_format: str = "bilingual",
-    skip_translated_content: bool = True,
     client_id: str = None,
     translation_direction: str = None
 ):
@@ -804,7 +689,6 @@ async def process_translation(
         logger.info(f"术语预处理: {preprocess_terms}")
         logger.info(f"导出PDF: {export_pdf}")
         logger.info(f"输出格式: {output_format}")
-        logger.info(f"跳过已翻译内容: {skip_translated_content}")
         logger.info(f"翻译方向: {translation_direction}")
 
         # 发送任务开始通知
@@ -929,7 +813,6 @@ async def process_translation(
         doc_processor.preprocess_terms = preprocess_terms
         doc_processor.export_pdf = export_pdf
         doc_processor.output_format = output_format
-        doc_processor.skip_translated_content = skip_translated_content
 
         # 确定翻译方向
         is_cn_to_foreign = False
@@ -964,7 +847,6 @@ async def process_translation(
         logger.info(f"  - 术语预处理: {preprocess_terms}")
         logger.info(f"  - 导出PDF: {export_pdf}")
         logger.info(f"  - 输出格式: {output_format}")
-        logger.info(f"  - 跳过已翻译内容: {skip_translated_content}")
         logger.info(f"  - 源语言: {source_lang}")
         logger.info(f"  - 目标语言: {target_lang}")
         logger.info(f"  - 翻译方向: {'中文→外语' if is_cn_to_foreign else '外语→中文'}")
@@ -1393,6 +1275,42 @@ async def startup_event():
     logger.info("启动实时日志监控...")
     start_realtime_monitoring()
     logger.info("实时日志监控已启动")
+
+@app.post("/api/open-output-directory")
+async def open_output_directory():
+    """打开输出目录"""
+    try:
+        import os
+        import subprocess
+        import platform
+
+        # 获取输出目录路径
+        output_dir = os.path.join(os.getcwd(), "输出")
+
+        # 如果输出目录不存在，则创建它
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            logger.info(f"创建输出目录: {output_dir}")
+
+        # 根据操作系统打开目录
+        system = platform.system()
+        if system == "Windows":
+            os.startfile(output_dir)
+        elif system == "Darwin":  # macOS
+            subprocess.run(["open", output_dir])
+        else:  # Linux
+            subprocess.run(["xdg-open", output_dir])
+
+        logger.info(f"已打开输出目录: {output_dir}")
+        return {
+            "success": True,
+            "message": "输出目录已打开",
+            "path": output_dir
+        }
+
+    except Exception as e:
+        logger.error(f"打开输出目录失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"打开输出目录失败: {str(e)}")
 
 @app.on_event("shutdown")
 async def shutdown_event():

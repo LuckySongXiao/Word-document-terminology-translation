@@ -45,12 +45,16 @@ class TerminologyEditor:
             self.lang_listbox.selection_set(0)
             self.on_language_select(None)
 
-        # 设置窗口为模态
+        # 设置窗口为模态（优化版本，避免死锁）
         self.window.transient(parent)
-        self.window.grab_set()
+        # 延迟设置grab_set，避免初始化时的死锁
+        self.window.after(100, lambda: self.window.grab_set())
 
         # 设置关闭事件
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        # 添加窗口状态跟踪
+        self._is_closing = False
 
     def setup_styles(self):
         """设置自定义样式，与主界面保持一致"""
@@ -249,12 +253,13 @@ class TerminologyEditor:
             messagebox.showwarning("警告", "请先选择一个语言")
             return
 
-        # 创建输入对话框
+        # 创建输入对话框（优化模态设置）
         dialog = tk.Toplevel(self.window)
         dialog.title("添加术语")
         dialog.geometry("400x240")
         dialog.transient(self.window)
-        dialog.grab_set()
+        # 延迟设置grab_set，避免嵌套模态窗口死锁
+        dialog.after(50, lambda: dialog.grab_set())
         dialog.configure(background='#f5f5f5')  # 设置对话框背景色
 
         # 创建输入框
@@ -282,13 +287,13 @@ class TerminologyEditor:
             self.terminology[selected_language][chinese_term] = foreign_term
             # 更新显示
             self.update_term_list()
-            # 关闭对话框
-            dialog.destroy()
+            # 安全关闭对话框
+            self._safe_close_dialog(dialog)
 
         button_frame = ttk.Frame(dialog_frame)
         button_frame.grid(row=2, column=0, columnspan=2, pady=10)
         ttk.Button(button_frame, text="确认", command=confirm).pack(side=tk.LEFT, padx=10)
-        ttk.Button(button_frame, text="取消", command=dialog.destroy).pack(side=tk.LEFT)
+        ttk.Button(button_frame, text="取消", command=lambda: self._safe_close_dialog(dialog)).pack(side=tk.LEFT)
 
     def edit_term(self):
         """编辑选中的术语"""
@@ -309,12 +314,13 @@ class TerminologyEditor:
         chinese_term = item['values'][0]
         foreign_term = item['values'][1]
 
-        # 创建编辑对话框
+        # 创建编辑对话框（优化模态设置）
         dialog = tk.Toplevel(self.window)
         dialog.title("编辑术语")
         dialog.geometry("400x150")
         dialog.transient(self.window)
-        dialog.grab_set()
+        # 延迟设置grab_set，避免嵌套模态窗口死锁
+        dialog.after(50, lambda: dialog.grab_set())
         dialog.configure(background='#f5f5f5')  # 设置对话框背景色
 
         # 创建输入框
@@ -351,13 +357,13 @@ class TerminologyEditor:
             # 更新显示
             self.update_term_list()
 
-            # 关闭对话框
-            dialog.destroy()
+            # 安全关闭对话框
+            self._safe_close_dialog(dialog)
 
         button_frame = ttk.Frame(dialog_frame)
         button_frame.grid(row=2, column=0, columnspan=2, pady=10)
         ttk.Button(button_frame, text="确认", command=confirm).pack(side=tk.LEFT, padx=10)
-        ttk.Button(button_frame, text="取消", command=dialog.destroy).pack(side=tk.LEFT)
+        ttk.Button(button_frame, text="取消", command=lambda: self._safe_close_dialog(dialog)).pack(side=tk.LEFT)
 
     def delete_term(self):
         """删除选中的术语"""
@@ -685,12 +691,54 @@ class TerminologyEditor:
             json.dump(clean_terminology, f, ensure_ascii=False, indent=2)
 
     def on_close(self):
-        """关闭窗口时保存术语库"""
+        """关闭窗口时保存术语库 - 优化版本，避免死锁"""
+        if self._is_closing:
+            return  # 防止重复关闭
+
+        self._is_closing = True
+
         try:
-            save_terminology(self.terminology)
-            self.window.destroy()
+            # 先释放grab，避免死锁
+            if self.window.grab_current() == self.window:
+                self.window.grab_release()
+
+            # 异步保存术语库，避免阻塞UI
+            def save_and_close():
+                try:
+                    save_terminology(self.terminology)
+                    # 在主线程中销毁窗口
+                    self.window.after(0, self._safe_destroy)
+                except Exception as e:
+                    # 在主线程中显示错误
+                    self.window.after(0, lambda: messagebox.showerror("错误", f"保存术语库失败: {str(e)}"))
+                    self._is_closing = False
+
+            # 启动异步保存
+            import threading
+            threading.Thread(target=save_and_close, daemon=True).start()
+
         except Exception as e:
-            messagebox.showerror("错误", f"保存术语库失败: {str(e)}")
+            messagebox.showerror("错误", f"关闭窗口失败: {str(e)}")
+            self._is_closing = False
+
+    def _safe_destroy(self):
+        """安全销毁窗口"""
+        try:
+            if self.window and self.window.winfo_exists():
+                self.window.destroy()
+        except Exception as e:
+            print(f"销毁窗口时出错: {e}")
+
+    def _safe_close_dialog(self, dialog):
+        """安全关闭对话框，避免死锁"""
+        try:
+            # 先释放grab
+            if dialog.grab_current() == dialog:
+                dialog.grab_release()
+            # 然后销毁对话框
+            dialog.destroy()
+        except Exception as e:
+            print(f"关闭对话框时出错: {e}")
 
 def create_terminology_editor(parent, terminology):
     editor = TerminologyEditor(parent, terminology)

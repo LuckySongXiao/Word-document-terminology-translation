@@ -178,45 +178,46 @@ def create_ui(terminology, root=None):
     ollama_status_label = ttk.Label(translator_status_frame, textvariable=ollama_status_var)
     ollama_status_label.pack(side='left')
 
-    # 添加Ollama状态检查
+    # 添加翻译器状态检查
     def check_translator_status():
+        """检查翻译器状态 - 优化版本，减少阻塞"""
         # 检查智谱AI状态
-        zhipuai_available = translator._check_zhipuai_available()
-        if zhipuai_available:
-            zhipuai_status_var.set("智谱AI状态: 可用")
-        else:
-            zhipuai_status_var.set("智谱AI状态: 不可用")
+        try:
+            zhipuai_available = translator._check_zhipuai_available()
+            zhipuai_status_var.set("智谱AI状态: 可用" if zhipuai_available else "智谱AI状态: 不可用")
+        except Exception as e:
+            zhipuai_available = False
+            zhipuai_status_var.set("智谱AI状态: 检查失败")
+            logger.error(f"智谱AI检查失败: {str(e)}")
 
         # 检查Ollama状态
-        ollama_available = False
         try:
-            # 使用轻量级检查方法
             ollama_available = translator.check_ollama_service()
-            ollama_status_var.set("Ollama状态: 可用")
-            # 只要Ollama可用，就更新模型列表并启用模型选择
-            update_model_list()  # 添加这行来更新模型列表
-            model_combo.configure(state='readonly')
+            ollama_status_var.set("Ollama状态: 可用" if ollama_available else "Ollama状态: 不可用")
+            if ollama_available:
+                # 只要Ollama可用，就更新模型列表并启用模型选择
+                update_model_list()
+                model_combo.configure(state='readonly')
+            else:
+                model_combo.configure(state='disabled')
         except Exception as e:
+            ollama_available = False
             ollama_status_var.set("Ollama状态: 不可用")
             logger.error(f"Ollama检查失败: {str(e)}")
             model_combo.configure(state='disabled')
 
-        # 更新状态显示，但不强制用户选择
-        if ollama_available and zhipuai_available:
-            status_var.set("所有翻译服务正常")
+        # 更新状态显示
+        if ollama_available or zhipuai_available:
+            if ollama_available and zhipuai_available:
+                status_var.set("所有翻译服务正常")
+            elif ollama_available:
+                status_var.set("Ollama可用，智谱AI不可用")
+            else:
+                status_var.set("智谱AI可用，Ollama不可用")
             use_ollama_check.configure(state='normal')
             translate_btn.configure(state='normal')
-        elif ollama_available and not zhipuai_available:
-            status_var.set("智谱AI不可用，但Ollama可用")
-            use_ollama_check.configure(state='normal')  # 仍然允许选择
-            translate_btn.configure(state='normal')
-        elif not ollama_available and zhipuai_available:
-            status_var.set("Ollama不可用，但智谱AI可用")
-            use_ollama_check.configure(state='normal')  # 仍然允许选择
-            translate_btn.configure(state='normal')
         else:
-            # 两个翻译器都不可用
-            status_var.set("所有翻译服务不可用，请检查网络和Ollama服务")
+            status_var.set("所有翻译服务不可用，请检查网络和配置")
             use_ollama_check.configure(state='disabled')
             translate_btn.configure(state='disabled')
 
@@ -262,9 +263,18 @@ def create_ui(terminology, root=None):
     translate_btn = ttk.Button(root, text="开始翻译", command=start_translation)
     translate_btn.pack(pady=10)
 
-    # 初始检查翻译服务状态
-    translators_available = check_translator_status()
-    if not translators_available:
-        translate_btn.configure(state='disabled')
+    # 初始检查翻译服务状态（异步进行）
+    def initial_status_check():
+        """初始状态检查"""
+        try:
+            translators_available = check_translator_status()
+            if not translators_available:
+                root.after(0, lambda: translate_btn.configure(state='disabled'))
+        except Exception as e:
+            logger.error(f"初始状态检查失败: {str(e)}")
+            root.after(0, lambda: status_var.set("状态检查失败，请手动检查"))
+
+    # 延迟1秒后进行初始检查
+    root.after(1000, lambda: threading.Thread(target=initial_status_check, daemon=True).start())
 
     root.mainloop()

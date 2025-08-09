@@ -1,0 +1,225 @@
+<Window x:Class="DocumentTranslator.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="多格式文档翻译助手 v3.1" 
+        Height="800" Width="1200"
+        MinHeight="600" MinWidth="900"
+        WindowStartupLocation="CenterScreen"
+        Icon="logo.ico">
+    
+    <Window.Resources>
+        <!-- 样式定义 -->
+        <Style x:Key="CardStyle" TargetType="Border">
+            <Setter Property="Background" Value="#F8F9FA"/>
+            <Setter Property="BorderBrush" Value="#E9ECEF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="Padding" Value="15"/>
+        </Style>
+        
+        <Style x:Key="HeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="#2C3E50"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+        
+        <Style x:Key="StatusStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <!-- 菜单栏 -->
+        <Menu Grid.Row="0">
+            <MenuItem Header="设置(_S)">
+                <MenuItem Header="智谱AI设置" Click="OpenZhipuSettings"/>
+                <MenuItem Header="Ollama设置" Click="OpenOllamaSettings"/>
+                <MenuItem Header="硅基流动设置" Click="OpenSiliconFlowSettings"/>
+                <MenuItem Header="内网OpenAI设置" Click="OpenIntranetSettings"/>
+            </MenuItem>
+            <MenuItem Header="帮助(_H)">
+                <MenuItem Header="授权信息" Click="ShowLicenseInfo"/>
+                <MenuItem Header="关于" Click="ShowAbout"/>
+            </MenuItem>
+        </Menu>
+        
+        <!-- 主内容区域 -->
+        <Grid Grid.Row="1" Margin="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="400"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            
+            <!-- 左侧控制面板 -->
+            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    
+                    <!-- 系统状态卡片 -->
+                    <Border Style="{StaticResource CardStyle}">
+                        <StackPanel>
+                            <TextBlock Text="📊 系统状态" Style="{StaticResource HeaderStyle}"/>
+                            <TextBlock x:Name="StatusText" Text="🟢 系统就绪" Style="{StaticResource StatusStyle}" Foreground="Green"/>
+                            <ProgressBar x:Name="TranslationProgress" Height="20" Margin="0,10,0,0" Visibility="Collapsed"/>
+                            <TextBlock x:Name="ProgressText" Style="{StaticResource StatusStyle}" Visibility="Collapsed"/>
+                        </StackPanel>
+                    </Border>
+                    
+                    <!-- 文档管理卡片 -->
+                    <Border Style="{StaticResource CardStyle}">
+                        <StackPanel>
+                            <TextBlock Text="📁 文档管理" Style="{StaticResource HeaderStyle}"/>
+                            <TextBox x:Name="FilePathText" IsReadOnly="True" Margin="0,5" Height="25"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,5">
+                                <Button Content="🔍 选择文件" Click="SelectFile" Width="100" Margin="0,0,5,0"/>
+                                <Button Content="🗑️ 清除" Click="ClearFile" Width="80"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    
+                    <!-- 翻译配置卡片 -->
+                    <Border Style="{StaticResource CardStyle}">
+                        <StackPanel>
+                            <TextBlock Text="🌐 翻译配置" Style="{StaticResource HeaderStyle}"/>
+                            
+                            <!-- 翻译方向 -->
+                            <TextBlock Text="🔄 翻译方向" FontWeight="Bold" Margin="0,5"/>
+                            <RadioButton x:Name="ChineseToForeign" Content="🇨🇳 中文 → 外语" IsChecked="True" Margin="0,2"/>
+                            <RadioButton x:Name="ForeignToChinese" Content="🌍 外语 → 中文" Margin="0,2"/>
+                            
+                            <!-- 目标语言 -->
+                            <TextBlock Text="🗣️ 目标语言" FontWeight="Bold" Margin="0,10,0,5"/>
+                            <ComboBox x:Name="LanguageCombo" Height="25" SelectedIndex="0">
+                                <ComboBoxItem Content="英语"/>
+                                <ComboBoxItem Content="日语"/>
+                                <ComboBoxItem Content="韩语"/>
+                                <ComboBoxItem Content="法语"/>
+                                <ComboBoxItem Content="德语"/>
+                                <ComboBoxItem Content="西班牙语"/>
+                                <ComboBoxItem Content="意大利语"/>
+                                <ComboBoxItem Content="俄语"/>
+                            </ComboBox>
+                        </StackPanel>
+                    </Border>
+                    
+                    <!-- AI翻译引擎卡片 -->
+                    <Border Style="{StaticResource CardStyle}">
+                        <StackPanel>
+                            <TextBlock Text="🤖 AI翻译引擎" Style="{StaticResource HeaderStyle}"/>
+                            
+                            <!-- 引擎选择 -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                
+                                <Button x:Name="ZhipuButton" Grid.Row="0" Grid.Column="0" Content="🧠 智谱AI" 
+                                        Click="SelectZhipuAI" Margin="2" Height="35"/>
+                                <Button x:Name="OllamaButton" Grid.Row="0" Grid.Column="1" Content="🦙 Ollama" 
+                                        Click="SelectOllama" Margin="2" Height="35"/>
+                                <Button x:Name="SiliconFlowButton" Grid.Row="1" Grid.Column="0" Content="💎 硅基流动" 
+                                        Click="SelectSiliconFlow" Margin="2" Height="35"/>
+                                <Button x:Name="IntranetButton" Grid.Row="1" Grid.Column="1" Content="🌐 内网OpenAI" 
+                                        Click="SelectIntranet" Margin="2" Height="35"/>
+                            </Grid>
+                            
+                            <!-- 模型选择 -->
+                            <TextBlock Text="🎯 模型选择" FontWeight="Bold" Margin="0,10,0,5"/>
+                            <ComboBox x:Name="ModelCombo" Height="25"/>
+                            <Button Content="🔄 刷新模型" Click="RefreshModels" Margin="0,5" Height="25"/>
+                            
+                            <!-- 连接测试 -->
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Content="🧪 测试连接" Click="TestConnection" Width="100"/>
+                                <TextBlock x:Name="TestStatusText" Text="🔍 未测试" Style="{StaticResource StatusStyle}" Margin="10,0"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    
+                    <!-- 翻译选项卡片 -->
+                    <Border Style="{StaticResource CardStyle}">
+                        <StackPanel>
+                            <TextBlock Text="⚙️ 翻译选项" Style="{StaticResource HeaderStyle}"/>
+                            <CheckBox x:Name="UseTerminology" Content="✅ 使用术语库进行翻译" IsChecked="True" Margin="0,2"/>
+                            <CheckBox x:Name="PreprocessTerms" Content="⚡ 使用术语预处理" IsChecked="True" Margin="0,2"/>
+                            <CheckBox x:Name="ExportPDF" Content="📑 同时导出PDF文件" Margin="0,2"/>
+
+                            <!-- 输出格式选项 -->
+                            <TextBlock Text="📋 输出格式" FontWeight="Bold" Margin="0,10,0,5"/>
+                            <RadioButton x:Name="BilingualOutput" Content="📋 双语对照显示" IsChecked="True" Margin="0,2"/>
+                            <RadioButton x:Name="TranslationOnlyOutput" Content="📝 仅显示翻译结果" Margin="0,2"/>
+                            <TextBlock Text="💡 双语对照便于对比，仅翻译结果更简洁"
+                                       FontSize="10" Foreground="Gray" Margin="0,2,0,10" TextWrapping="Wrap"/>
+
+                            <Button Content="📝 打开术语库编辑器" Click="OpenTerminologyEditor" Margin="0,5,0,0" Height="30"/>
+                        </StackPanel>
+                    </Border>
+                    
+                    <!-- 开始翻译卡片 -->
+                    <Border Style="{StaticResource CardStyle}" Background="#FFEBEE">
+                        <StackPanel>
+                            <TextBlock Text="🚀 开始翻译" Style="{StaticResource HeaderStyle}"/>
+                            <Button x:Name="TranslateButton" Content="🚀 开始翻译" Click="StartTranslation" 
+                                    Height="40" FontSize="14" FontWeight="Bold" Background="#4CAF50" Foreground="White"/>
+                            <TextBlock Text="💡 请确保已选择文件、设置翻译方向和检查翻译器状态" 
+                                       Style="{StaticResource StatusStyle}" Foreground="Gray" TextWrapping="Wrap" Margin="0,5"/>
+                        </StackPanel>
+                    </Border>
+                    
+                </StackPanel>
+            </ScrollViewer>
+            
+            <!-- 右侧日志面板 -->
+            <Border Grid.Column="1" Style="{StaticResource CardStyle}" Margin="10,0,0,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <TextBlock Grid.Row="0" Text="📋 实时日志" Style="{StaticResource HeaderStyle}"/>
+                    
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <TextBox x:Name="LogTextBox" IsReadOnly="True" TextWrapping="Wrap" 
+                                 Background="Black" Foreground="LightGreen" FontFamily="Consolas" FontSize="11"
+                                 VerticalScrollBarVisibility="Auto"/>
+                    </ScrollViewer>
+                    
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,5,0,0">
+                        <Button Content="📁 打开输出目录" Click="OpenOutputDirectory" Width="120" Height="30" Margin="0,0,5,0"/>
+                        <Button Content="📋 复制日志" Click="CopyLog" Width="90" Height="30" Margin="0,0,5,0"/>
+                        <Button Content="💾 保存日志" Click="SaveLog" Width="90" Height="30" Margin="0,0,5,0"/>
+                        <Button Content="🗑️ 清除日志" Click="ClearLog" Width="90" Height="30"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            
+        </Grid>
+        
+        <!-- 状态栏 -->
+        <StatusBar Grid.Row="2">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusBarText" Text="就绪"/>
+            </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <TextBlock Text="多格式文档翻译助手 v3.1"/>
+            </StatusBarItem>
+        </StatusBar>
+        
+    </Grid>
+</Window>

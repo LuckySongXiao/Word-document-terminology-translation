@@ -1,0 +1,214 @@
+<Window x:Class="DocumentTranslator.Windows.EngineConfigWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AI引擎配置" Height="500" Width="600"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+    
+    <Window.Resources>
+        <Style x:Key="ConfigCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="#F8F9FA"/>
+            <Setter Property="BorderBrush" Value="#E9ECEF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Margin" Value="10"/>
+            <Setter Property="Padding" Value="15"/>
+        </Style>
+        
+        <Style x:Key="ConfigHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="#2C3E50"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <!-- 标题栏 -->
+        <Border Grid.Row="0" Background="#3498DB" Padding="15">
+            <TextBlock Text="🤖 AI引擎配置管理" FontSize="18" FontWeight="Bold" Foreground="White"/>
+        </Border>
+        
+        <!-- 配置选项卡 -->
+        <TabControl Grid.Row="1" Margin="10">
+            
+            <!-- 智谱AI配置 -->
+            <TabItem Header="🧠 智谱AI">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Border Style="{StaticResource ConfigCardStyle}">
+                        <StackPanel>
+                            <TextBlock Text="智谱AI配置" Style="{StaticResource ConfigHeaderStyle}"/>
+                            
+                            <TextBlock Text="API密钥" FontWeight="Bold" Margin="0,5"/>
+                            <PasswordBox x:Name="ZhipuApiKey" Height="35" Margin="0,2,0,10"/>
+
+                            <TextBlock Text="API地址" FontWeight="Bold" Margin="0,5"/>
+                            <TextBox x:Name="ZhipuApiUrl" Text="https://open.bigmodel.cn/api/paas/v4/chat/completions"
+                                     Height="35" Margin="0,2,0,10" TextWrapping="Wrap"/>
+
+                            <TextBlock Text="默认模型" FontWeight="Bold" Margin="0,5"/>
+                            <ComboBox x:Name="ZhipuDefaultModel" Height="35" Margin="0,2,0,10">
+                                <ComboBoxItem Content="GLM-4-Flash-250414" IsSelected="True"/>
+                                <ComboBoxItem Content="GLM-4.1V-Thinking-Flash"/>
+                                <ComboBoxItem Content="GLM-4V-Flash"/>
+                                <ComboBoxItem Content="GLM-Z1-Flash"/>
+                            </ComboBox>
+
+                            <TextBlock Text="温度参数 (0.0-1.0)" FontWeight="Bold" Margin="0,5"/>
+                            <Slider x:Name="ZhipuTemperature" Minimum="0" Maximum="1" Value="0.3"
+                                    TickFrequency="0.1" IsSnapToTickEnabled="True" Margin="0,2,0,5"/>
+                            <TextBlock Text="{Binding ElementName=ZhipuTemperature, Path=Value, StringFormat=F1}"
+                                       HorizontalAlignment="Center" Margin="0,0,0,10"/>
+
+                            <TextBlock Text="最大令牌数" FontWeight="Bold" Margin="0,5"/>
+                            <TextBox x:Name="ZhipuMaxTokens" Text="4000" Height="35" Margin="0,2,0,10"/>
+                            
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Content="🧪 测试连接" Click="TestZhipuConnection" Width="100" Margin="0,0,10,0"/>
+                                <Button Content="💾 保存配置" Click="SaveZhipuConfig" Width="100"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </ScrollViewer>
+            </TabItem>
+            
+            <!-- Ollama配置 -->
+            <TabItem Header="🦙 Ollama">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Border Style="{StaticResource ConfigCardStyle}">
+                        <StackPanel>
+                            <TextBlock Text="Ollama配置" Style="{StaticResource ConfigHeaderStyle}"/>
+                            
+                            <TextBlock Text="服务地址" FontWeight="Bold" Margin="0,5"/>
+                            <TextBox x:Name="OllamaUrl" Text="http://localhost:11434" Height="35" Margin="0,2,0,10"/>
+
+                            <TextBlock Text="默认模型" FontWeight="Bold" Margin="0,5"/>
+                            <ComboBox x:Name="OllamaDefaultModel" Height="35" Margin="0,2,0,10" IsEditable="True">
+                                <ComboBoxItem Content="llama2"/>
+                                <ComboBoxItem Content="qwen"/>
+                                <ComboBoxItem Content="mistral"/>
+                                <ComboBoxItem Content="codellama"/>
+                            </ComboBox>
+
+                            <TextBlock Text="温度参数 (0.0-1.0)" FontWeight="Bold" Margin="0,5"/>
+                            <Slider x:Name="OllamaTemperature" Minimum="0" Maximum="1" Value="0.3"
+                                    TickFrequency="0.1" IsSnapToTickEnabled="True" Margin="0,2,0,5"/>
+                            <TextBlock Text="{Binding ElementName=OllamaTemperature, Path=Value, StringFormat=F1}"
+                                       HorizontalAlignment="Center" Margin="0,0,0,10"/>
+
+                            <TextBlock Text="上下文长度" FontWeight="Bold" Margin="0,5"/>
+                            <TextBox x:Name="OllamaContextLength" Text="4096" Height="35" Margin="0,2,0,10"/>
+                            
+                            <CheckBox x:Name="OllamaKeepAlive" Content="保持模型加载" Margin="0,5"/>
+                            
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Content="🔄 刷新模型" Click="RefreshOllamaModels" Width="100" Margin="0,0,10,0"/>
+                                <Button Content="🧪 测试连接" Click="TestOllamaConnection" Width="100" Margin="0,0,10,0"/>
+                                <Button Content="💾 保存配置" Click="SaveOllamaConfig" Width="100"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </ScrollViewer>
+            </TabItem>
+            
+            <!-- 硅基流动配置 -->
+            <TabItem Header="💎 硅基流动">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Border Style="{StaticResource ConfigCardStyle}">
+                        <StackPanel>
+                            <TextBlock Text="硅基流动配置" Style="{StaticResource ConfigHeaderStyle}"/>
+                            
+                            <TextBlock Text="API密钥" FontWeight="Bold" Margin="0,5"/>
+                            <PasswordBox x:Name="SiliconFlowApiKey" Height="35" Margin="0,2,0,10"/>
+
+                            <TextBlock Text="API地址" FontWeight="Bold" Margin="0,5"/>
+                            <TextBox x:Name="SiliconFlowApiUrl" Text="https://api.siliconflow.cn/v1/chat/completions"
+                                     Height="35" Margin="0,2,0,10" TextWrapping="Wrap"/>
+
+                            <TextBlock Text="默认模型" FontWeight="Bold" Margin="0,5"/>
+                            <ComboBox x:Name="SiliconFlowDefaultModel" Height="35" Margin="0,2,0,10">
+                                <ComboBoxItem Content="deepseek-ai/DeepSeek-V2.5"/>
+                                <ComboBoxItem Content="Qwen/Qwen2.5-72B-Instruct"/>
+                                <ComboBoxItem Content="meta-llama/Meta-Llama-3.1-70B-Instruct"/>
+                                <ComboBoxItem Content="01-ai/Yi-1.5-34B-Chat"/>
+                            </ComboBox>
+
+                            <TextBlock Text="温度参数 (0.0-1.0)" FontWeight="Bold" Margin="0,5"/>
+                            <Slider x:Name="SiliconFlowTemperature" Minimum="0" Maximum="1" Value="0.3"
+                                    TickFrequency="0.1" IsSnapToTickEnabled="True" Margin="0,2,0,5"/>
+                            <TextBlock Text="{Binding ElementName=SiliconFlowTemperature, Path=Value, StringFormat=F1}"
+                                       HorizontalAlignment="Center" Margin="0,0,0,10"/>
+
+                            <TextBlock Text="最大令牌数" FontWeight="Bold" Margin="0,5"/>
+                            <TextBox x:Name="SiliconFlowMaxTokens" Text="4000" Height="35" Margin="0,2,0,10"/>
+                            
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Content="🧪 测试连接" Click="TestSiliconFlowConnection" Width="100" Margin="0,0,10,0"/>
+                                <Button Content="💾 保存配置" Click="SaveSiliconFlowConfig" Width="100"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </ScrollViewer>
+            </TabItem>
+            
+            <!-- 内网OpenAI配置 -->
+            <TabItem Header="🌐 内网OpenAI">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Border Style="{StaticResource ConfigCardStyle}">
+                        <StackPanel>
+                            <TextBlock Text="内网OpenAI配置" Style="{StaticResource ConfigHeaderStyle}"/>
+                            
+                            <TextBlock Text="API密钥" FontWeight="Bold" Margin="0,5"/>
+                            <PasswordBox x:Name="IntranetApiKey" Height="35" Margin="0,2,0,10"/>
+
+                            <TextBlock Text="API地址" FontWeight="Bold" Margin="0,5"/>
+                            <TextBox x:Name="IntranetApiUrl" Text="http://your-internal-server/v1/chat/completions"
+                                     Height="35" Margin="0,2,0,10" TextWrapping="Wrap"/>
+
+                            <TextBlock Text="默认模型" FontWeight="Bold" Margin="0,5"/>
+                            <ComboBox x:Name="IntranetDefaultModel" Height="35" Margin="0,2,0,10" IsEditable="True">
+                                <ComboBoxItem Content="deepseek-r1-70b"/>
+                                <ComboBoxItem Content="gpt-4"/>
+                                <ComboBoxItem Content="gpt-3.5-turbo"/>
+                                <ComboBoxItem Content="claude-3"/>
+                            </ComboBox>
+
+                            <TextBlock Text="温度参数 (0.0-1.0)" FontWeight="Bold" Margin="0,5"/>
+                            <Slider x:Name="IntranetTemperature" Minimum="0" Maximum="1" Value="0.3"
+                                    TickFrequency="0.1" IsSnapToTickEnabled="True" Margin="0,2,0,5"/>
+                            <TextBlock Text="{Binding ElementName=IntranetTemperature, Path=Value, StringFormat=F1}"
+                                       HorizontalAlignment="Center" Margin="0,0,0,10"/>
+
+                            <TextBlock Text="最大令牌数" FontWeight="Bold" Margin="0,5"/>
+                            <TextBox x:Name="IntranetMaxTokens" Text="4000" Height="35" Margin="0,2,0,10"/>
+                            
+                            <CheckBox x:Name="IntranetSkipSSL" Content="跳过SSL验证" Margin="0,5"/>
+                            
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Content="🧪 测试连接" Click="TestIntranetConnection" Width="100" Margin="0,0,10,0"/>
+                                <Button Content="💾 保存配置" Click="SaveIntranetConfig" Width="100"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </ScrollViewer>
+            </TabItem>
+            
+        </TabControl>
+        
+        <!-- 底部按钮 -->
+        <Border Grid.Row="2" Background="#ECF0F1" Padding="15">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="📁 打开配置目录" Click="OpenConfigDirectory" Width="120" Margin="0,0,10,0"/>
+                <Button Content="🔄 重置所有配置" Click="ResetAllConfigs" Width="120" Margin="0,0,10,0"/>
+                <Button Content="✅ 确定" Click="CloseWindow" Width="80" IsDefault="True"/>
+            </StackPanel>
+        </Border>
+        
+    </Grid>
+</Window>

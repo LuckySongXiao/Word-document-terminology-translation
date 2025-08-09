@@ -2,21 +2,18 @@
     "primary_translator": {
         "type": "zhipuai",
         "api_key": "",
-        "model": "glm-4-flash",
-        "temperature": 0.3
+        "model": "glm-4-flash-250414",
+        "temperature": 0.2
     },
     "fallback_translator": {
         "type": "ollama",
-        "model": "qwen3:32b",
+        "model": "qwen3:0.6b",
         "api_url": "https://50844s9656.wocp.fun",
         "available_models": [
-            "failed",
-            "NAME",
-            "qwen3:32b",
-            "qwq:latest",
-            "mxbai-embed-large:latest",
-            "deepseek-r1:32b",
-            "glm4:9b-text-fp16"
+            "bge-m3:latest",
+            "gemma3:1b-it-qat",
+            "deepseek-r1:1.5b",
+            "qwen3:0.6b"
         ],
         "model_list_timeout": 10.0,
         "translate_timeout": 60.0
@@ -36,9 +33,15 @@
     "current_translator_type": "zhipuai",
     "zhipuai_translator": {
         "type": "zhipuai",
-        "model": "glm-4-flash",
-        "temperature": 0.3,
-        "timeout": 60.0
+        "model": "GLM-4-Flash-250414",
+        "temperature": 0.2,
+        "timeout": 60.0,
+        "available_models": [
+            "GLM-4-Flash-250414",
+            "GLM-4.1V-Thinking-Flash",
+            "GLM-4V-Flash",
+            "GLM-Z1-Flash"
+        ]
     },
     "environment": {
         "intranet_mode": false,

@@ -96,37 +96,10 @@
                             <i class="bi bi-file-earmark-text"></i> 选择文件:
                         </label>
                         <div class="input-group">
-                            <input class="form-control" type="file" id="file-upload"
-                                   accept=".docx,.doc,.txt,.pdf,.xlsx,.xls" required>
+                            <input class="form-control" type="file" id="file-upload" required>
                             <span class="input-group-text bg-light">
-                                <small class="text-muted">支持 .docx, .txt, .pdf, .xlsx, .xls 等格式</small>
+                                <small class="text-muted">支持 .docx, .pdf, .xlsx, .xls 等格式</small>
                             </span>
-                        </div>
-                    </div>
-
-                    <!-- 文件格式支持说明 -->
-                    <div class="alert alert-info mb-3">
-                        <i class="bi bi-info-circle me-2"></i>
-                        <strong>支持的文件格式：</strong>
-                        <div class="row mt-2">
-                            <div class="col-md-6">
-                                <ul class="mb-0">
-                                    <li><strong>Word文档：</strong> .docx</li>
-                                    <li><strong>文本文件：</strong> .txt</li>
-                                </ul>
-                            </div>
-                            <div class="col-md-6">
-                                <ul class="mb-0">
-                                    <li><strong>PDF文档：</strong> .pdf</li>
-                                    <li><strong>Excel表格：</strong> .xlsx, .xls</li>
-                                </ul>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <small class="text-success">
-                                <i class="bi bi-check-circle me-1"></i>
-                                <strong>新增支持：</strong>现在支持 .txt格式文件！
-                            </small>
                         </div>
                     </div>
 
@@ -189,14 +162,6 @@
                     </div>
 
                     <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="skip-translated-content" checked>
-                        <label class="form-check-label" for="skip-translated-content">
-                            <i class="bi bi-skip-forward"></i> 跳过已翻译内容
-                            <small class="text-muted ms-2">自动检测并跳过文档中已经翻译过的区域</small>
-                        </label>
-                    </div>
-
-                    <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" id="export-pdf">
                         <label class="form-check-label" for="export-pdf">
                             <i class="bi bi-file-earmark-pdf"></i> 导出PDF文件
@@ -241,9 +206,14 @@
         <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center bg-info bg-opacity-10">
                 <h5 class="mb-0"><i class="bi bi-list-task"></i> 翻译任务</h5>
-                <button class="btn btn-sm btn-outline-secondary btn-icon" id="refresh-tasks">
-                    <i class="bi bi-arrow-clockwise"></i> 刷新
-                </button>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary btn-icon me-2" id="open-output-dir">
+                        <i class="bi bi-folder2-open"></i> 打开输出目录
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary btn-icon" id="refresh-tasks">
+                        <i class="bi bi-arrow-clockwise"></i> 刷新
+                    </button>
+                </div>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
@@ -333,6 +303,6 @@
 
     <!-- 引入JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="/static/js/main.js?v=20250610-fix"></script>
+    <script src="/static/js/main.js"></script>
 </body>
 </html>

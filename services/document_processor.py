@@ -3,14 +3,20 @@ import logging
 import time
 import json
 import re
+import traceback
 from docx import Document
+from docx.shared import RGBColor
 from typing import Dict, List, Any, Tuple
 from .translator import TranslationService
 import pandas as pd
 from datetime import datetime
 from utils.term_extractor import TermExtractor
-from docx2pdf import convert as docx2pdf_convert
-from .translation_detector import TranslationDetector
+try:
+    from docx2pdf import convert as docx2pdf_convert
+    DOCX2PDF_AVAILABLE = True
+except ImportError:
+    DOCX2PDF_AVAILABLE = False
+    logger.warning("docx2pdf模块未安装，DOCX转PDF功能将不可用")
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +26,6 @@ class DocumentProcessor:
         self.use_terminology = True  # 默认使用术语库
         self.preprocess_terms = True  # 是否预处理术语（默认启用）
         self.term_extractor = TermExtractor()  # 术语提取器
-        self.translation_detector = TranslationDetector()  # 翻译检测器
-        self.skip_translated_content = True  # 是否跳过已翻译内容（默认启用）
         self.export_pdf = False  # 是否导出PDF
         self.source_lang = "zh"  # 默认源语言为中文
         self.target_lang = "en"  # 默认目标语言为英文
@@ -29,7 +33,7 @@ class DocumentProcessor:
         self.progress_callback = None  # 进度回调函数
         self.retry_count = 3  # 翻译失败重试次数
         self.retry_delay = 1  # 重试延迟（秒）
-        self.output_format = "bilingual"  # 输出格式：双语对照模式
+        self.output_format = "bilingual"  # 输出格式：bilingual（双语）或translation_only（仅翻译）
 
         # 配置日志记录器
         self.logger = logging.getLogger(__name__)
@@ -168,17 +172,17 @@ class DocumentProcessor:
         translation_results = []
 
         try:
-            # 更新进度：处理表格
-            self._update_progress(0.2, "处理文档表格...")
-
-            # 处理表格
-            self._process_tables(doc, target_terminology, translation_results)
-
-            # 更新进度：处理段落
-            self._update_progress(0.4, "处理文档段落...")
+            # 更新进度：处理段落（与C#版本保持一致，先处理段落）
+            self._update_progress(0.2, "处理文档段落...")
 
             # 处理段落
             self._process_paragraphs(doc, target_terminology, translation_results)
+
+            # 更新进度：处理表格
+            self._update_progress(0.4, "处理文档表格...")
+
+            # 处理表格
+            self._process_tables(doc, target_terminology, translation_results)
 
             # 更新进度：保存文档
             self._update_progress(0.8, "保存文档...")
@@ -308,27 +312,6 @@ class DocumentProcessor:
             else:
                 raise Exception(f"加载文档失败: {error_msg}")
 
-    def _should_skip_translation(self, text: str) -> bool:
-        """判断是否应该跳过翻译的内容"""
-        # 如果禁用了跳过已翻译内容功能，只进行基本检查
-        if not self.skip_translated_content:
-            if not text or not text.strip():
-                return True
-            # 只跳过明显的非文本内容（数字、代码等）
-            should_skip, reason = self.translation_detector.should_skip_translation(text, self.source_lang, self.target_lang)
-            if should_skip and any(keyword in reason for keyword in ["纯数字", "代码", "URL", "邮箱"]):
-                self.logger.info(f"跳过非文本内容: {reason} - {text[:50]}...")
-                return True
-            return False
-
-        # 使用新的翻译检测器
-        should_skip, reason = self.translation_detector.should_skip_translation(text, self.source_lang, self.target_lang)
-        if should_skip:
-            self.logger.info(f"跳过翻译内容: {reason} - {text[:50]}...")
-            return True
-
-        return False
-
     def _process_tables(self, doc: Document, terminology: Dict, translation_results: list) -> None:
         """处理文档中的表格"""
         self.logger.info("开始处理文档表格")
@@ -400,310 +383,117 @@ class DocumentProcessor:
             self.logger.info(f"从表格中提取了 {len(used_terminology)} 个术语")
             self.web_logger.info(f"Extracted {len(used_terminology)} terms from tables")
 
-        # 处理表格翻译
-        if self.skip_translated_content:
-            # 使用双行检测处理表格
-            self._process_tables_with_line_detection(doc, terminology, used_terminology, translation_results)
-        else:
-            # 传统方式处理表格
-            self._process_tables_traditional(doc, terminology, used_terminology, translation_results)
+        # 处理表格翻译（与C#版本保持一致，直接遍历所有单元格）
+        total_tables = len(doc.tables)
+        logger.info(f"开始处理 {total_tables} 个表格")
 
-    def _process_tables_with_line_detection(self, doc: Document, terminology: Dict, used_terminology: Dict, translation_results: List) -> None:
-        """使用双行检测处理表格翻译 - 确保逐个单元格检查，无遗漏"""
-        logger.info("开始使用双行检测处理表格翻译")
-
-        for table_idx, table in enumerate(doc.tables):
-            logger.info(f"处理表格 {table_idx + 1}/{len(doc.tables)}")
-
-            # 创建单元格处理状态跟踪
-            processed_cells = set()
-            processed_cell_objects = set()  # 跟踪已处理的单元格对象（用于合并单元格）
-            total_cells = 0
-
-            # 先统计总单元格数
-            for row_idx, row in enumerate(table.rows):
-                for cell_idx, cell in enumerate(row.cells):
+        # 收集所有单元格
+        all_cells = []
+        for table_idx, table in enumerate(doc.tables, 1):
+            for row_idx, row in enumerate(table.rows, 1):
+                for cell_idx, cell in enumerate(row.cells, 1):
                     if cell.text.strip():
-                        total_cells += 1
+                        all_cells.append({
+                            'cell': cell,
+                            'table_idx': table_idx,
+                            'row_idx': row_idx,
+                            'cell_idx': cell_idx
+                        })
 
-            logger.info(f"表格 {table_idx + 1} 包含 {total_cells} 个非空单元格")
+        logger.info(f"共找到 {len(all_cells)} 个非空单元格")
 
-            # 逐行逐列处理，确保每个单元格都被检查
-            for row_idx, row in enumerate(table.rows):
-                logger.info(f"处理表格 {table_idx + 1} 第 {row_idx + 1} 行")
+        # 处理每个单元格
+        for cell_info in all_cells:
+            cell = cell_info['cell']
+            table_idx = cell_info['table_idx']
+            row_idx = cell_info['row_idx']
+            cell_idx = cell_info['cell_idx']
 
-                cells = row.cells
-                cell_idx = 0
+            # 更完整地提取单元格文本，确保不遗漏内容
+            cell_text = self._extract_complete_cell_text(cell).strip()
+            logger.debug(f"检查表格 {table_idx} 行 {row_idx} 列 {cell_idx}: '{cell_text}'")
 
-                while cell_idx < len(cells):
-                    current_cell = cells[cell_idx]
-                    current_text = current_cell.text.strip()
-                    cell_position = (table_idx, row_idx, cell_idx)
+            # 验证文本提取的完整性
+            if not self._validate_cell_text_completeness(cell, cell_text):
+                logger.warning(f"表格 {table_idx} 行 {row_idx} 列 {cell_idx} 文本提取可能不完整，尝试重新提取")
+                # 尝试使用备用方法提取
+                alternative_text = cell.text.strip()
+                if len(alternative_text) > len(cell_text):
+                    logger.info(f"使用备用方法获得更完整的文本: '{alternative_text}'")
+                    cell_text = alternative_text
 
-                    # 跳过空单元格
-                    if not current_text:
-                        cell_idx += 1
-                        continue
+            # 使用诊断方法进行详细的翻译决策分析
+            diagnosis = self._diagnose_cell_translation_decision(cell_text, table_idx, row_idx, cell_idx)
 
-                    # 检查是否已经处理过（避免重复处理）
-                    if cell_position in processed_cells:
-                        cell_idx += 1
-                        continue
+            # 如果不需要翻译，跳过
+            if not diagnosis['should_translate']:
+                continue
 
-                    # 检查是否是合并单元格（通过对象ID检测）
-                    cell_object_id = id(current_cell)
-                    if cell_object_id in processed_cell_objects:
-                        logger.info(f"跳过合并单元格 [{row_idx + 1}, {cell_idx + 1}]: 已处理过相同对象 (ID={cell_object_id})")
-                        processed_cells.add(cell_position)
-                        cell_idx += 1
-                        continue
+            logger.info(f"正在翻译表格 {table_idx} 行 {row_idx} 列 {cell_idx}: {cell_text[:50]}...")
+            logger.info(f"单元格包含 {len(cell.paragraphs)} 个段落")
 
-                    logger.info(f"检查单元格 [{row_idx + 1}, {cell_idx + 1}]: {current_text[:30]}...")
-
-                    # 尝试与右侧单元格进行双行检测
-                    translation_pair_found = False
-                    if cell_idx + 1 < len(cells):
-                        next_cell = cells[cell_idx + 1]
-                        next_text = next_cell.text.strip()
-                        next_position = (table_idx, row_idx, cell_idx + 1)
-
-                        if next_text and next_position not in processed_cells:
-                            # 双行检测：判断是否构成翻译对
-                            is_translation_pair, pair_reason = self.translation_detector._is_translation_pair(
-                                current_text, next_text, self.source_lang, self.target_lang
-                            )
-
-                            if is_translation_pair:
-                                logger.info(f"跳过表格翻译对: {pair_reason}")
-                                logger.info(f"  单元格 [{row_idx + 1}, {cell_idx + 1}]: {current_text[:30]}...")
-                                logger.info(f"  单元格 [{row_idx + 1}, {cell_idx + 2}]: {next_text[:30]}...")
-
-                                # 标记两个单元格为已处理
-                                processed_cells.add(cell_position)
-                                processed_cells.add(next_position)
-                                translation_pair_found = True
-                                cell_idx += 2  # 跳过两个单元格
-                                continue
-
-                    # 如果没有找到翻译对，检查单个单元格是否应该跳过
-                    if not translation_pair_found:
-                        should_skip, reason = self.translation_detector.should_skip_translation(
-                            current_text, self.source_lang, self.target_lang
-                        )
-
-                        if should_skip:
-                            logger.info(f"跳过表格单元格翻译: {reason} - 单元格 [{row_idx + 1}, {cell_idx + 1}]: {current_text[:30]}...")
-                            processed_cells.add(cell_position)
-                            cell_idx += 1
-                            continue
-
-                        # 翻译当前单元格
-                        logger.info(f"翻译表格单元格 [{row_idx + 1}, {cell_idx + 1}]: {current_text[:30]}...")
-                        self._translate_single_cell(current_cell, used_terminology, translation_results, terminology)
-                        processed_cells.add(cell_position)
-                        processed_cell_objects.add(cell_object_id)  # 记录已处理的单元格对象
-                        cell_idx += 1
-
-            # 验证是否所有单元格都被处理
-            actual_processed = len(processed_cells)
-            logger.info(f"表格 {table_idx + 1} 处理完成: 处理了 {actual_processed} 个单元格")
-
-            # 如果处理的单元格数量不匹配，进行补充检查
-            if actual_processed < total_cells:
-                logger.warning(f"表格 {table_idx + 1} 可能有遗漏，进行补充检查...")
-                self._verify_table_completeness(table, table_idx, processed_cells, used_terminology, translation_results, terminology)
-
-    def _verify_table_completeness(self, table, table_idx: int, processed_cells: set, used_terminology: Dict, translation_results: List, terminology: Dict) -> None:
-        """验证表格处理的完整性，确保没有遗漏任何单元格"""
-        logger.info(f"验证表格 {table_idx + 1} 的处理完整性...")
-
-        missed_cells = []
-
-        for row_idx, row in enumerate(table.rows):
-            for cell_idx, cell in enumerate(row.cells):
-                cell_text = cell.text.strip()
-                cell_position = (table_idx, row_idx, cell_idx)
-
-                if cell_text and cell_position not in processed_cells:
-                    missed_cells.append((row_idx, cell_idx, cell_text, cell))
-
-        if missed_cells:
-            logger.warning(f"发现 {len(missed_cells)} 个遗漏的单元格，正在补充处理...")
-
-            for row_idx, cell_idx, cell_text, cell in missed_cells:
-                logger.info(f"补充处理遗漏的单元格 [{row_idx + 1}, {cell_idx + 1}]: {cell_text[:30]}...")
-
-                # 检查是否应该跳过翻译
-                should_skip, reason = self.translation_detector.should_skip_translation(
-                    cell_text, self.source_lang, self.target_lang
-                )
-
-                if should_skip:
-                    logger.info(f"跳过遗漏单元格翻译: {reason} - 单元格 [{row_idx + 1}, {cell_idx + 1}]: {cell_text[:30]}...")
-                else:
-                    # 翻译遗漏的单元格
-                    logger.info(f"翻译遗漏的单元格 [{row_idx + 1}, {cell_idx + 1}]: {cell_text[:30]}...")
-                    self._translate_single_cell(cell, used_terminology, translation_results, terminology)
-        else:
-            logger.info(f"表格 {table_idx + 1} 处理完整，无遗漏单元格")
-
-    def _process_tables_traditional(self, doc: Document, terminology: Dict, used_terminology: Dict, translation_results: List) -> None:
-        """传统方式处理表格翻译（不使用双行检测）- 确保逐个单元格检查，无遗漏"""
-        logger.info("开始使用传统方式处理表格翻译")
-
-        for table_idx, table in enumerate(doc.tables):
-            logger.info(f"处理表格 {table_idx + 1}/{len(doc.tables)}")
-
-            # 统计总单元格数
-            total_cells = 0
-            processed_cells = 0
-            processed_cell_objects = set()  # 跟踪已处理的单元格对象（用于合并单元格）
-
-            for row_idx, row in enumerate(table.rows):
-                for cell_idx, cell in enumerate(row.cells):
-                    cell_text = cell.text.strip()
-                    if cell_text:
-                        total_cells += 1
-
-            logger.info(f"表格 {table_idx + 1} 包含 {total_cells} 个非空单元格")
-
-            # 逐行逐列处理每个单元格
-            for row_idx, row in enumerate(table.rows):
-                for cell_idx, cell in enumerate(row.cells):
-                    cell_text = cell.text.strip()
-
-                    if cell_text:
-                        # 检查是否是合并单元格（通过对象ID检测）
-                        cell_object_id = id(cell)
-                        if cell_object_id in processed_cell_objects:
-                            logger.info(f"跳过合并单元格 [{row_idx + 1}, {cell_idx + 1}]: 已处理过相同对象 (ID={cell_object_id})")
-                            processed_cells += 1
-                            continue
-
-                        logger.info(f"检查单元格 [{row_idx + 1}, {cell_idx + 1}]: {cell_text[:30]}...")
-
-                        # 检查是否应该跳过翻译
-                        should_skip, reason = self.translation_detector.should_skip_translation(
-                            cell_text, self.source_lang, self.target_lang
-                        )
-
-                        if should_skip:
-                            logger.info(f"跳过表格单元格翻译: {reason} - 单元格 [{row_idx + 1}, {cell_idx + 1}]: {cell_text[:30]}...")
-                        else:
-                            logger.info(f"翻译表格单元格 [{row_idx + 1}, {cell_idx + 1}]: {cell_text[:30]}...")
-                            self._translate_single_cell(cell, used_terminology, translation_results, terminology)
-                            processed_cell_objects.add(cell_object_id)  # 记录已处理的单元格对象
-
-                        processed_cells += 1
-
-            logger.info(f"表格 {table_idx + 1} 处理完成: 检查了 {processed_cells}/{total_cells} 个单元格")
-
-    def _translate_single_cell(self, cell, used_terminology: Dict, translation_results: List, terminology: Dict = None) -> None:
-        """翻译单个表格单元格"""
-        logger.info(f"正在翻译表格内容: {cell.text[:50]}...")
-
-        # 如果是仅翻译模式，保存原文并清空单元格
-        if self.output_format == "translation_only":
-            original_text = cell.text
-            for para in cell.paragraphs:
-                para.clear()
-            # 保存原始格式信息（清空后）
-            original_format = self._save_format_info(cell.paragraphs)
-        else:
-            # 双语对照模式，保存原始格式信息
+            # 先保存原始格式信息，再根据模式处理内容
             original_format = self._save_format_info(cell.paragraphs)
 
-        # 检查单元格中是否包含数学公式
-        text, formulas = self._extract_latex_formulas(cell.text if self.output_format == "bilingual" else original_text)
-
-        # 预处理多行文本以解决AI模型翻译不完整的问题
-        text, is_multiline = self._preprocess_multiline_text(text)
-
-        # 翻译单元格内容（不包含公式部分）
-        try:
-            if self.preprocess_terms:
-                # 使用术语预处理方式翻译
-                if self.source_lang == "zh":
-                    # 中文 → 外语
-                    # 检查是否有可用的术语
-                    if not used_terminology:
-                        # 如果没有术语，使用常规翻译
-                        logger.info("未找到匹配术语，使用常规翻译（带术语库）")
-                        translation = self.translator.translate_text(text, terminology, self.source_lang, self.target_lang)
-                    else:
-                        # 使用新的直接替换方法，避免占位符恢复问题
-                        logger.info(f"使用术语预处理方式翻译，找到 {len(used_terminology)} 个匹配术语")
-                        # 记录术语样本（仅记录前5个术语，避免日志过大）
-                        terms_sample = list(used_terminology.items())[:5]
-                        logger.info(f"术语样本（前5个）: {terms_sample}")
-
-                        # 使用新的直接替换方法，避免占位符恢复问题
-                        processed_text = self.term_extractor.replace_terms_with_target_language(text, used_terminology)
-                        logger.info(f"直接替换后的文本前100个字符: {processed_text[:100]}")
-
-                        # 翻译处理后的文本（不需要恢复占位符）
-                        translation = self.translator.translate_text(processed_text, {}, self.source_lang, self.target_lang)
-                        logger.info(f"最终翻译结果前100个字符: {translation[:100]}")
-                else:
-                    # 外语 → 中文
-                    # 检查是否有可用的术语
-                    if not used_terminology:
-                        # 如果没有术语，使用常规翻译
-                        logger.info("未找到匹配术语，使用常规翻译")
-                        translation = self.translator.translate_text(text, None, self.source_lang, self.target_lang)
-                    else:
-                        try:
-                            # 使用term_extractor的占位符系统进行术语预处理
-                            # used_terminology已经是 {外语术语: 中文术语} 格式，直接使用
-                            reverse_terminology = used_terminology
-
-                            logger.info(f"使用术语预处理方式翻译，找到 {len(reverse_terminology)} 个匹配术语")
-                            # 记录术语样本（仅记录前5个术语，避免日志过大）
-                            terms_sample = list(reverse_terminology.items())[:5]
-                            logger.info(f"术语样本（前5个）: {terms_sample}")
-
-                            # 使用新的直接替换方法，避免占位符恢复问题
-                            processed_text = self.term_extractor.replace_foreign_terms_with_target_language(text, reverse_terminology)
-                            logger.info(f"直接替换后的文本前100个字符: {processed_text[:100]}")
-
-                            # 翻译处理后的文本（不需要恢复占位符）
-                            translation = self.translator.translate_text(processed_text, {}, self.source_lang, self.target_lang)
-                            logger.info(f"最终翻译结果前100个字符: {translation[:100]}")
-                        except Exception as e:
-                            logger.error(f"外语→中文术语替换失败: {str(e)}")
-                            # 如果术语替换失败，使用常规翻译
-                            translation = self.translator.translate_text(text, None, self.source_lang, self.target_lang)
+            if self.output_format == "translation_only":
+                # 仅翻译模式：保存原文并清空单元格
+                original_text = cell_text
+                for para in cell.paragraphs:
+                    para.clear()
             else:
-                # 使用常规方式翻译
-                if self.source_lang == "zh":
-                    # 中文 → 外语，使用术语库
-                    translation = self.translator.translate_text(text, terminology, self.source_lang, self.target_lang)
-                else:
-                    # 外语 → 中文，不使用术语库（因为术语库是中文→外语格式）
-                    translation = self.translator.translate_text(text, None, self.source_lang, self.target_lang)
-        except Exception as e:
-            logger.error(f"翻译单元格内容失败: {str(e)}")
-            # 翻译失败时直接输出原文，不显示错误信息
-            translation = text
+                # 双语对照模式：保持原文不变
+                original_text = cell_text
 
-        # 后处理多行文本翻译结果
-        if is_multiline:
-            translation = self._postprocess_multiline_translation(translation)
+            # 检查单元格中是否包含数学公式
+            # 使用原始文本进行公式提取，确保不遗漏内容
+            text, formulas = self._extract_latex_formulas(original_text)
 
-        # 将公式重新插入到翻译后的文本中
-        if formulas:
-            translation = self._restore_latex_formulas(translation, formulas)
+            # 检查是否需要翻译（数值、单位等可能不需要翻译）
+            if self._should_skip_translation(text):
+                logger.info(f"单元格内容无需翻译: {text}")
+                translation = text  # 保持原文
+            else:
+                # 翻译单元格内容（不包含公式部分）
+                translation = ""
+                logger.info(f"开始翻译单元格内容: {text[:50]}...")
+                logger.info(f"preprocess_terms: {self.preprocess_terms}")
+                logger.info(f"source_lang: {self.source_lang}")
+                logger.info(f"target_lang: {self.target_lang}")
 
-        logger.info(f"表格内容翻译完成: {translation[:50]}")
+                # 使用带重试机制的翻译方法
+                translation = self._translate_cell_with_retry(text, terminology, table_idx, row_idx, cell_idx)
 
-        # 收集翻译结果
-        translation_results.append({
-            'original': cell.text if self.output_format == "bilingual" else original_text,
-            'translated': translation
-        })
+            try:
+                # 将公式重新插入到翻译后的文本中
+                if formulas:
+                    translation = self._restore_latex_formulas(translation, formulas)
 
-        # 在原文后添加翻译
-        self._add_translation_with_format(cell.paragraphs, translation, original_format)
+                logger.info(f"表格 {table_idx} 行 {row_idx} 列 {cell_idx} 翻译完成: {translation[:50]}...")
+
+                # 验证翻译结果质量
+                location = f"表格 {table_idx} 行 {row_idx} 列 {cell_idx}"
+                validation_issues = self._validate_translation_result(original_text, translation, location)
+                if validation_issues:
+                    for issue in validation_issues:
+                        logger.warning(f"翻译质量问题: {issue}")
+                        self.web_logger.warning(f"Translation quality issue: {issue}")
+
+                # 收集翻译结果
+                translation_results.append({
+                    'original': cell_text if self.output_format == "bilingual" else original_text,
+                    'translated': translation,
+                    'location': location,
+                    'validation_issues': validation_issues  # 添加验证问题信息
+                })
+
+                # 使用C#版本一致的方法更新单元格文本
+                self._update_table_cell_text(cell.paragraphs, original_text, translation)
+                logger.info(f"表格 {table_idx} 行 {row_idx} 列 {cell_idx} 处理完成")
+
+            except Exception as e:
+                logger.error(f"处理表格 {table_idx} 行 {row_idx} 列 {cell_idx} 的翻译结果时失败: {str(e)}")
+                # 即使添加翻译失败，也要继续处理下一个单元格
+                continue
 
     def _process_paragraphs(self, doc: Document, terminology: Dict, translation_results: list) -> None:
         """处理文档中的段落"""
@@ -742,11 +532,6 @@ class DocumentProcessor:
             for para_idx, paragraph in enumerate(doc.paragraphs, 1):
                 self.web_logger.info(f"Processing paragraph {para_idx}/{para_count}")
                 if paragraph.text.strip():
-                    # 检查是否应该跳过翻译
-                    if self._should_skip_translation(paragraph.text):
-                        logger.info(f"跳过翻译段落内容（纯数字/编码）: {paragraph.text[:50]}...")
-                        continue
-
                     try:
                         # 根据翻译方向选择不同的术语提取方法
                         if self.source_lang == "zh":
@@ -784,180 +569,114 @@ class DocumentProcessor:
                 self._export_used_terminology(used_terminology)
 
         # 处理段落翻译
-        if self.skip_translated_content:
-            # 使用双行检测处理段落
-            self._process_paragraphs_with_line_detection(doc, terminology, used_terminology, translation_results)
-        else:
-            # 传统方式处理段落
-            self._process_paragraphs_traditional(doc, terminology, used_terminology, translation_results)
-
-    def _process_paragraphs_with_line_detection(self, doc: Document, terminology: Dict, used_terminology: Dict, translation_results: List) -> None:
-        """使用双行检测处理段落翻译"""
-        paragraphs = doc.paragraphs
-        total_paragraphs = len(paragraphs)
-        processed_count = 0
-
-        i = 0
-        while i < len(paragraphs):
-            current_para = paragraphs[i]
-            current_text = current_para.text.strip()
-
-            if not current_text:
-                i += 1
-                processed_count += 1
-                continue
-
-            # 更新进度
-            progress = (processed_count / total_paragraphs) * 0.6 + 0.4  # 段落处理从40%开始
-            self._update_progress(progress, f"双行检测处理段落 {processed_count+1}/{total_paragraphs}")
-
-            # 检查是否有下一个段落进行双行检测
-            if i + 1 < len(paragraphs):
-                next_para = paragraphs[i + 1]
-                next_text = next_para.text.strip()
-
-                if next_text:
-                    # 双行检测：判断是否构成翻译对
-                    is_translation_pair, pair_reason = self.translation_detector._is_translation_pair(
-                        current_text, next_text, self.source_lang, self.target_lang
-                    )
-
-                    if is_translation_pair:
-                        logger.info(f"跳过翻译对: {pair_reason}")
-                        logger.info(f"  第一行: {current_text[:50]}...")
-                        logger.info(f"  第二行: {next_text[:50]}...")
-                        i += 2  # 跳过两个段落
-                        processed_count += 2
-                        continue
-
-            # 检查单行是否应该跳过
-            should_skip, reason = self.translation_detector.should_skip_translation(
-                current_text, self.source_lang, self.target_lang
-            )
-
-            if should_skip:
-                logger.info(f"跳过段落翻译: {reason} - {current_text[:50]}...")
-                i += 1
-                processed_count += 1
-                continue
-
-            # 翻译当前段落
-            self._translate_single_paragraph(current_para, used_terminology, translation_results, terminology)
-
-            i += 1
-            processed_count += 1
-
-    def _process_paragraphs_traditional(self, doc: Document, terminology: Dict, used_terminology: Dict, translation_results: List) -> None:
-        """传统方式处理段落翻译（不使用双行检测）"""
-        for i, paragraph in enumerate(doc.paragraphs):
+        paragraph_count = 0
+        for paragraph in doc.paragraphs:
             if paragraph.text.strip():
-                # 更新进度
-                progress = (i / len(doc.paragraphs)) * 0.6 + 0.4  # 段落处理从40%开始
-                self._update_progress(progress, f"处理段落 {i+1}/{len(doc.paragraphs)}")
+                paragraph_count += 1
+                logger.info(f"正在翻译段落 {paragraph_count}: {paragraph.text[:50]}...")
 
-                self._translate_single_paragraph(paragraph, used_terminology, translation_results, terminology)
+                # 保存原文文本（在所有模式下都需要）
+                original_text = paragraph.text
 
-    def _translate_single_paragraph(self, paragraph, used_terminology: Dict, translation_results: List, terminology: Dict = None) -> None:
-        """翻译单个段落"""
-        logger.info(f"正在翻译段落: {paragraph.text[:50]}...")
-
-        # 如果是仅翻译模式，清空原文段落
-        if self.output_format == "translation_only":
-            original_text = paragraph.text
-            paragraph.clear()
-            # 保存原始格式信息
-            original_format = self._save_format_info([paragraph])
-        else:
-            # 双语对照模式，保存原始格式信息
-            original_format = self._save_format_info([paragraph])
-
-        # 检查段落中是否包含数学公式
-        text, formulas = self._extract_latex_formulas(paragraph.text if self.output_format == "bilingual" else original_text)
-
-        # 预处理多行文本以解决AI模型翻译不完整的问题
-        text, is_multiline = self._preprocess_multiline_text(text)
-
-        # 翻译段落内容（不包含公式部分）
-        try:
-            if self.preprocess_terms:
-                # 使用术语预处理方式翻译
-                if self.is_cn_to_foreign:
-                    # 中文 → 外语
-                    # 检查是否有可用的术语
-                    if not used_terminology:
-                        # 如果没有术语，使用常规翻译
-                        logger.info("未找到匹配术语，使用常规翻译（带术语库）")
-                        translation = self.translator.translate_text(text, terminology, self.source_lang, self.target_lang)
-                    else:
-                        # 使用新的直接替换方法，避免占位符恢复问题
-                        logger.info(f"使用直接术语替换方法，找到 {len(used_terminology)} 个匹配术语")
-                        # 记录术语样本（仅记录前5个术语，避免日志过大）
-                        terms_sample = list(used_terminology.items())[:5]
-                        logger.info(f"术语样本（前5个）: {terms_sample}")
-
-                        # 直接替换术语为目标语言
-                        processed_text = self.term_extractor.replace_terms_with_target_language(text, used_terminology)
-                        logger.info(f"直接替换后的文本前100个字符: {processed_text[:100]}")
-
-                        # 翻译处理后的文本（不需要恢复占位符）
-                        translation = self.translator.translate_text(processed_text, {}, self.source_lang, self.target_lang)
-                        logger.info(f"最终翻译结果前100个字符: {translation[:100]}")
+                # 如果是仅翻译模式，清空原文段落
+                if self.output_format == "translation_only":
+                    paragraph.clear()
+                    # 保存原始格式信息
+                    original_format = self._save_format_info([paragraph])
                 else:
-                    # 外语 → 中文
-                    # 检查是否有可用的术语
-                    if not used_terminology:
-                        # 如果没有术语，使用常规翻译
-                        logger.info("未找到匹配术语，使用常规翻译")
-                        translation = self.translator.translate_text(text, None, self.source_lang, self.target_lang)
+                    # 双语对照模式，保存原始格式信息
+                    original_format = self._save_format_info([paragraph])
+
+                # 检查段落中是否包含数学公式
+                text, formulas = self._extract_latex_formulas(paragraph.text if self.output_format == "bilingual" else original_text)
+
+                # 翻译段落内容（不包含公式部分）
+                try:
+                    if self.preprocess_terms:
+                        # 使用术语预处理方式翻译
+                        if self.is_cn_to_foreign:
+                            # 中文 → 外语
+                            # 检查是否有可用的术语
+                            if not used_terminology:
+                                # 如果没有术语，使用常规翻译
+                                logger.info("未找到匹配术语，使用常规翻译（带术语库）")
+                                translation = self.translator.translate_text(text, terminology, self.source_lang, self.target_lang)
+                            else:
+                                # 直接使用翻译器的内置术语处理功能
+                                logger.info(f"使用翻译器内置术语处理功能，找到 {len(used_terminology)} 个匹配术语")
+                                # 记录术语样本（仅记录前5个术语，避免日志过大）
+                                terms_sample = list(used_terminology.items())[:5]
+                                logger.info(f"术语样本（前5个）: {terms_sample}")
+
+                                translation = self.translator.translate_text(text, used_terminology, self.source_lang, self.target_lang)
+                                logger.info(f"最终翻译结果前100个字符: {translation[:100]}")
+                        else:
+                            # 外语 → 中文
+                            # 检查是否有可用的术语
+                            if not used_terminology:
+                                # 如果没有术语，使用常规翻译
+                                logger.info("未找到匹配术语，使用常规翻译")
+                                translation = self.translator.translate_text(text, None, self.source_lang, self.target_lang)
+                            else:
+                                # 使用term_extractor的占位符系统进行术语预处理
+                                # used_terminology已经是 {外语术语: 中文术语} 格式，直接使用
+                                reverse_terminology = used_terminology
+
+                                logger.info(f"使用术语预处理方式翻译，找到 {len(reverse_terminology)} 个匹配术语")
+                                # 记录术语样本（仅记录前5个术语，避免日志过大）
+                                terms_sample = list(reverse_terminology.items())[:5]
+                                logger.info(f"术语样本（前5个）: {terms_sample}")
+
+                                processed_text = self.term_extractor.replace_foreign_terms_with_placeholders(text, reverse_terminology)
+                                logger.info(f"替换后的文本前100个字符: {processed_text[:100]}")
+
+                                # 翻译处理后的文本（不使用术语库，因为已经预处理了）
+                                logger.info("开始翻译含占位符的文本...")
+                                translated_with_placeholders = self.translator.translate_text(processed_text, None, self.source_lang, self.target_lang)
+                                logger.info(f"翻译后的文本前100个字符: {translated_with_placeholders[:100]}")
+
+                                # 将占位符替换回中文术语
+                                logger.info("开始将占位符替换回中文术语...")
+                                translation = self.term_extractor.restore_placeholders_with_chinese_terms(translated_with_placeholders)
+                                logger.info(f"最终翻译结果前100个字符: {translation[:100]}")
                     else:
-                        # 使用新的直接替换方法，避免占位符恢复问题
-                        # used_terminology已经是 {外语术语: 中文术语} 格式，直接使用
-                        reverse_terminology = used_terminology
+                        # 使用常规方式翻译
+                        if self.is_cn_to_foreign:
+                            # 中文 → 外语，使用术语库
+                            translation = self.translator.translate_text(text, terminology, self.source_lang, self.target_lang)
+                        else:
+                            # 外语 → 中文，不使用术语库（因为术语库是中文→外语格式）
+                            translation = self.translator.translate_text(text, None, self.source_lang, self.target_lang)
+                except Exception as e:
+                    logger.error(f"翻译段落内容失败: {str(e)}")
+                    # 返回错误信息而不是抛出异常，这样可以继续处理其他段落
+                    translation = f"翻译失败: {str(e)}"
 
-                        logger.info(f"使用直接术语替换方法，找到 {len(reverse_terminology)} 个匹配术语")
-                        # 记录术语样本（仅记录前5个术语，避免日志过大）
-                        terms_sample = list(reverse_terminology.items())[:5]
-                        logger.info(f"术语样本（前5个）: {terms_sample}")
+                # 将公式重新插入到翻译后的文本中
+                if formulas:
+                    translation = self._restore_latex_formulas(translation, formulas)
 
-                        # 直接替换外语术语为中文术语
-                        processed_text = self.term_extractor.replace_foreign_terms_with_target_language(text, reverse_terminology)
-                        logger.info(f"直接替换后的文本前100个字符: {processed_text[:100]}")
+                logger.info(f"段落翻译完成: {translation[:50]}")
 
-                        # 翻译处理后的文本（不需要恢复占位符）
-                        translation = self.translator.translate_text(processed_text, {}, self.source_lang, self.target_lang)
-                        logger.info(f"最终翻译结果前100个字符: {translation[:100]}")
-            else:
-                # 使用常规方式翻译
-                if self.is_cn_to_foreign:
-                    # 中文 → 外语，使用术语库
-                    translation = self.translator.translate_text(text, terminology, self.source_lang, self.target_lang)
-                else:
-                    # 外语 → 中文，不使用术语库（因为术语库是中文→外语格式）
-                    translation = self.translator.translate_text(text, None, self.source_lang, self.target_lang)
-        except Exception as e:
-            logger.error(f"翻译段落内容失败: {str(e)}")
-            # 翻译失败时直接输出原文，不显示错误信息
-            translation = text
+                # 验证翻译结果质量
+                location = f"段落 {paragraph_count}"
+                validation_issues = self._validate_translation_result(original_text, translation, location)
+                if validation_issues:
+                    for issue in validation_issues:
+                        logger.warning(f"翻译质量问题: {issue}")
+                        self.web_logger.warning(f"Translation quality issue: {issue}")
 
-        # 后处理多行文本翻译结果
-        if is_multiline:
-            translation = self._postprocess_multiline_translation(translation)
+                # 收集翻译结果
+                translation_results.append({
+                    'original': paragraph.text if self.output_format == "bilingual" else original_text,
+                    'translated': translation,
+                    'location': location,
+                    'validation_issues': validation_issues  # 添加验证问题信息
+                })
 
-        # 将公式重新插入到翻译后的文本中
-        if formulas:
-            translation = self._restore_latex_formulas(translation, formulas)
-
-        logger.info(f"段落翻译完成: {translation[:50]}")
-
-        # 收集翻译结果
-        translation_results.append({
-            'original': paragraph.text if self.output_format == "bilingual" else original_text,
-            'translated': translation
-        })
-
-        # 在原文后添加翻译
-        self._add_translation_with_format([paragraph], translation, original_format)
-        time.sleep(0.1)  # 添加小延迟，避免API请求过快
+                # 在原文后添加翻译
+                self._add_translation_with_format([paragraph], translation, original_format)
+                time.sleep(0.1)  # 添加小延迟，避免API请求过快
 
     def _extract_latex_formulas(self, text: str) -> Tuple[str, List[Tuple[str, str]]]:
         """
@@ -1040,6 +759,8 @@ class DocumentProcessor:
             pdf_path = os.path.splitext(docx_path)[0] + ".pdf"
 
             # 使用docx2pdf转换
+            if not DOCX2PDF_AVAILABLE:
+                raise ImportError("docx2pdf模块未安装，无法转换为PDF")
             docx2pdf_convert(docx_path, pdf_path)
 
             logger.info(f"PDF文件已保存到: {pdf_path}")
@@ -1070,27 +791,539 @@ class DocumentProcessor:
 
     def _add_translation_with_format(self, paragraphs: List[Any], translation: str, original_format: List[Dict]) -> None:
         """添加带格式的翻译文本"""
+        # 修复：只在第一个有内容的段落中添加翻译，避免重复
+        translation_added = False
+
         for paragraph in paragraphs:
-            # 根据输出格式决定如何添加翻译
-            if self.output_format == "bilingual" and paragraph.text.strip():
-                # 双语对照模式：在原文后添加翻译
-                paragraph.add_run('\n')  # 添加换行
-                run = paragraph.add_run(translation)
+            # 只在第一个有内容的段落中添加翻译
+            if not translation_added and paragraph.text.strip():
+                # 根据输出格式决定如何添加翻译
+                if self.output_format == "bilingual":
+                    # 双语对照模式：在原文后添加翻译
+                    paragraph.add_run('\n')  # 添加换行
+                    run = paragraph.add_run(translation)
+                else:
+                    # 仅翻译模式：直接添加翻译（不添加换行）
+                    run = paragraph.add_run(translation)
+
+                # 设置翻译文本字体
+                run.font.name = 'Calibri'
+
+                # 保持与原文相同的格式
+                if original_format and original_format[0]['runs']:
+                    first_run = original_format[0]['runs'][0]
+                    run.bold = first_run['bold']
+                    run.italic = first_run['italic']
+                    run.underline = first_run['underline']
+                    if first_run['font_size']:
+                        run.font.size = first_run['font_size']
+
+                translation_added = True
+                break  # 添加完翻译后立即退出循环
+
+    def _extract_complete_cell_text(self, cell) -> str:
+        """
+        更完整地提取单元格文本，确保不遗漏任何内容（增强版）
+
+        Args:
+            cell: 表格单元格对象
+
+        Returns:
+            str: 完整的单元格文本
+        """
+        if not cell or not cell.paragraphs:
+            return ""
+
+        # 收集所有段落的文本
+        all_text_parts = []
+
+        logger.debug(f"单元格包含 {len(cell.paragraphs)} 个段落")
+
+        for para_idx, paragraph in enumerate(cell.paragraphs):
+            logger.debug(f"处理段落 {para_idx + 1}: runs数量={len(paragraph.runs)}")
+
+            if not paragraph.runs:
+                # 如果段落没有runs，直接获取段落文本
+                para_text = paragraph.text.strip()
+                if para_text:
+                    all_text_parts.append(para_text)
+                    logger.debug(f"段落 {para_idx + 1} (无runs): '{para_text}'")
             else:
-                # 仅翻译模式：直接添加翻译（不添加换行）
-                run = paragraph.add_run(translation)
+                # 如果段落有runs，逐个收集run的文本
+                para_parts = []
+                for run_idx, run in enumerate(paragraph.runs):
+                    run_text = run.text
+                    if run_text:
+                        para_parts.append(run_text)
+                        logger.debug(f"段落 {para_idx + 1} run {run_idx + 1}: '{run_text}'")
 
-            # 设置翻译文本字体
-            run.font.name = 'Calibri'
+                if para_parts:
+                    para_text = ''.join(para_parts).strip()
+                    if para_text:
+                        all_text_parts.append(para_text)
+                        logger.debug(f"段落 {para_idx + 1} 合并后: '{para_text}'")
 
-            # 保持与原文相同的格式
-            if original_format and original_format[0]['runs']:
-                first_run = original_format[0]['runs'][0]
-                run.bold = first_run['bold']
-                run.italic = first_run['italic']
-                run.underline = first_run['underline']
-                if first_run['font_size']:
-                    run.font.size = first_run['font_size']
+        # 合并所有文本部分，使用空格分隔而不是换行，避免句子被截断
+        if len(all_text_parts) > 1:
+            # 多个段落，检查是否应该用空格还是换行连接
+            complete_text = ' '.join(all_text_parts).strip()
+            logger.debug(f"多段落合并 (空格连接): '{complete_text}'")
+
+            # 如果文本看起来像是连续的句子，使用空格连接
+            # 如果文本看起来像是独立的行，使用换行连接
+            if any('\n' in part for part in all_text_parts):
+                complete_text = '\n'.join(all_text_parts).strip()
+                logger.debug(f"多段落合并 (换行连接): '{complete_text}'")
+        else:
+            complete_text = '\n'.join(all_text_parts).strip()
+
+        # 如果提取的文本为空，尝试使用原始的cell.text作为备用
+        if not complete_text:
+            complete_text = cell.text.strip()
+            logger.debug(f"使用备用方法提取: '{complete_text}'")
+
+        logger.debug(f"最终提取的完整文本: '{complete_text}'")
+        return complete_text
+
+    def _validate_cell_text_completeness(self, cell, extracted_text: str) -> bool:
+        """
+        验证提取的单元格文本是否完整
+
+        Args:
+            cell: 表格单元格对象
+            extracted_text: 提取的文本
+
+        Returns:
+            bool: True表示文本完整，False表示可能有遗漏
+        """
+        try:
+            # 统计原始单元格中的字符数
+            total_chars = 0
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    if run.text:
+                        total_chars += len(run.text.strip())
+
+            # 比较提取文本的字符数
+            extracted_chars = len(extracted_text.strip())
+
+            # 如果提取的字符数明显少于原始字符数，可能有遗漏
+            if total_chars > 0 and extracted_chars < total_chars * 0.8:
+                logger.warning(f"单元格文本可能不完整: 原始{total_chars}字符，提取{extracted_chars}字符")
+                return False
+
+            return True
+        except Exception as e:
+            logger.error(f"验证单元格文本完整性失败: {str(e)}")
+            return True  # 出错时假设完整
+
+    def _contains_chinese_content(self, text: str) -> bool:
+        """
+        检查文本是否包含需要翻译的中文内容
+
+        Args:
+            text: 要检查的文本
+
+        Returns:
+            bool: True表示包含中文内容，False表示不包含
+        """
+        if not text or not text.strip():
+            return False
+
+        # 检查是否包含中文字符
+        chinese_chars = re.findall(r'[\u4e00-\u9fff]', text)
+        if chinese_chars:
+            logger.debug(f"发现中文内容: {text} - 中文字符: {chinese_chars[:10]}")
+            return True
+
+        return False
+
+    def _should_skip_translation(self, text: str) -> bool:
+        """
+        判断文本是否应该跳过翻译（增强版）
+
+        Args:
+            text: 要检查的文本
+
+        Returns:
+            bool: True表示应该跳过翻译，False表示需要翻译
+        """
+        if not text or not text.strip():
+            return True
+
+        text = text.strip()
+
+        # 1. 纯数字（包括小数）
+        if re.match(r'^[\d\.\,\-\+]+$', text):
+            logger.debug(f"跳过翻译（纯数字）: {text}")
+            return True
+
+        # 2. 数字+单位组合（如 "≥50μs", "0.2-0.4Ω.cm", "20＜x＞50μs"）
+        # 注意：不能包含中文字符，避免误判中文术语
+        if re.match(r'^[≥≤<>＜＞\d\.\,\-\+\s]*[μΩa-zA-Z]*[μΩa-zA-Z\.\s]*$', text) and not re.search(r'[\u4e00-\u9fff]', text):
+            logger.debug(f"跳过翻译（数字+单位）: {text}")
+            return True
+
+        # 3. 纯符号或特殊字符
+        if re.match(r'^[≥≤<>＜＞\-\+\=\(\)\[\]\{\}\s]+$', text):
+            logger.debug(f"跳过翻译（纯符号）: {text}")
+            return True
+
+        # 4. 很短的文本（1个字符），可能是代码或标识符
+        if len(text) <= 1:
+            logger.debug(f"跳过翻译（过短）: {text}")
+            return True
+
+        # 5. 检查是否包含需要翻译的中文内容（重点优化）
+        if self.source_lang == "zh":
+            # 中文→外语翻译：检查是否包含中文字符
+            chinese_chars = re.findall(r'[\u4e00-\u9fff]', text)
+            if chinese_chars:
+                # 包含中文字符，需要翻译
+                logger.debug(f"需要翻译（包含中文）: {text} - 中文字符: {chinese_chars[:5]}")
+                return False
+
+            # 不包含中文，检查是否已经是英文
+            if re.match(r'^[a-zA-Z\s\d\.\,\-\+\(\)\[\]]+$', text):
+                logger.debug(f"跳过翻译（已是英文）: {text}")
+                return True
+
+        # 6. 检查是否包含需要翻译的英文内容
+        elif self.source_lang == "en":
+            # 英文→中文翻译：检查是否主要是英文
+            english_chars = len(re.findall(r'[a-zA-Z]', text))
+            chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
+            total_meaningful_chars = english_chars + chinese_chars
+
+            if total_meaningful_chars > 0:
+                english_ratio = english_chars / total_meaningful_chars
+                if english_ratio > 0.5:  # 50%以上是英文，需要翻译
+                    logger.debug(f"需要翻译（主要是英文）: {text}")
+                    return False
+                elif chinese_chars > 0:
+                    # 主要是中文，可能不需要翻译
+                    logger.debug(f"跳过翻译（主要是中文）: {text}")
+                    return True
+
+        # 7. 特殊情况：空白或只包含标点符号
+        if re.match(r'^[\s\.\,\;\:\!\?\(\)\[\]\{\}\"\']+$', text):
+            logger.debug(f"跳过翻译（只有标点符号）: {text}")
+            return True
+
+        # 8. 默认情况：如果包含任何文字内容，都尝试翻译
+        if re.search(r'[\u4e00-\u9fff]|[a-zA-Z]', text):
+            logger.debug(f"需要翻译（包含文字内容）: {text}")
+            return False
+
+        logger.debug(f"跳过翻译（其他情况）: {text}")
+        return True
+
+    def _update_table_cell_text(self, paragraphs: List[Any], original_text: str, translated_text: str) -> None:
+        """更新表格单元格文本（与C#版本保持一致）"""
+        if not paragraphs:
+            return
+
+        # 找到第一个有内容的段落
+        target_paragraph = None
+        for paragraph in paragraphs:
+            if paragraph.text.strip():
+                target_paragraph = paragraph
+                break
+
+        if target_paragraph is None:
+            return
+
+        # 清除所有段落的内容，避免重复
+        for paragraph in paragraphs:
+            # 清除所有run元素
+            for run in paragraph.runs[:]:  # 使用切片复制避免修改列表时的问题
+                paragraph._element.remove(run._element)
+
+        # 只在第一个段落中添加内容
+        if self.output_format == "bilingual":
+            # 双语对照模式：显示原文和译文
+            if original_text and original_text.strip():
+                original_run = target_paragraph.add_run(original_text)
+                # 添加换行
+                target_paragraph.add_run('\n')
+
+            # 添加翻译文本
+            if translated_text and translated_text.strip():
+                translated_run = target_paragraph.add_run(translated_text)
+                # 设置翻译文本的字体颜色为蓝色以便区分
+                translated_run.font.color.rgb = RGBColor(0x00, 0x66, 0xCC)
+        else:
+            # 仅翻译结果模式：只显示翻译文本
+            if translated_text and translated_text.strip():
+                new_run = target_paragraph.add_run(translated_text)
+            else:
+                # 如果翻译文本为空，保留原文
+                logger.warning(f"翻译文本为空，保留原文: {original_text[:50]}...")
+                if original_text and original_text.strip():
+                    new_run = target_paragraph.add_run(original_text)
+
+    def _is_already_translated(self, text: str) -> bool:
+        """检查文本是否已经包含翻译内容（增强版）"""
+        logger.debug(f"开始检查是否已翻译: '{text}'")
+
+        if not text or not text.strip():
+            logger.debug("文本为空，返回False")
+            return False
+
+        text = text.strip()
+
+        # 1. 检查是否包含明显的双语对照标记
+        bilingual_markers = [
+            "原文：", "译文：", "英文：", "中文：",
+            "Original:", "Translation:", "English:", "Chinese:"
+        ]
+
+        for marker in bilingual_markers:
+            if marker in text:
+                logger.debug(f"检测到双语标记，已翻译: {marker}")
+                return True
+
+        logger.debug("未检测到双语标记")
+
+        # 2. 检查是否包含常见的双语对照模式特征
+        lines = text.split('\n')
+        lines = [line.strip() for line in lines if line.strip()]
+        logger.debug(f"文本分行数: {len(lines)}")
+
+        # 3. 如果有多行，检查是否符合双语对照格式
+        if len(lines) >= 2:
+            # 检查是否有明显的原文-译文模式
+            for i in range(len(lines) - 1):
+                current_line = lines[i]
+                next_line = lines[i + 1]
+
+                if current_line and next_line:
+                    # 检查是否是中文-英文或英文-中文的组合
+                    if (self._is_chinese_text(current_line) and self._is_english_text(next_line)) or \
+                       (self._is_english_text(current_line) and self._is_chinese_text(next_line)):
+                        logger.debug(f"检测到双语对照格式，已翻译")
+                        return True
+
+        # 4. 如果只有一行，检查是否包含中英文混合（可能已翻译）
+        if len(lines) == 1:
+            logger.debug("单行文本，进入混合语言检测")
+            # 更严格的混合语言检测 - 提高阈值避免误判
+            has_mixed = self._contains_mixed_languages(text)
+            if has_mixed:
+                # 进一步检查是否真的是翻译内容
+                chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
+                english_chars = len(re.findall(r'[a-zA-Z]', text))
+                total_chars = len(text.strip())
+
+                # 更严格的条件：需要明显的双语特征才认为已翻译
+                # 1. 中英文字符都要足够多
+                # 2. 总长度要合理（避免误判短文本）
+                # 3. 中英文比例要相对平衡
+                # 4. 增加更严格的阈值，避免误判简单混合
+                if (chinese_chars >= 4 and english_chars >= 6 and total_chars >= 15 and
+                    min(chinese_chars, english_chars) / max(chinese_chars, english_chars) > 0.4):
+                    logger.debug(f"检测到明显的混合语言内容，可能已翻译: 中文{chinese_chars}字符，英文{english_chars}字符，总长度{total_chars}")
+                    return True
+                else:
+                    logger.debug(f"混合语言检测未达到阈值: 中文{chinese_chars}字符，英文{english_chars}字符，总长度{total_chars}")
+                    # 不要在这里返回False，继续检查括号翻译格式
+
+        # 5. 检查是否包含翻译结果的特征模式
+        # 例如：包含括号中的翻译 "位错(dislocation)"
+        bracket_pattern1 = r'[\u4e00-\u9fff]+\s*\([a-zA-Z\s]+\)'
+        bracket_pattern2 = r'[a-zA-Z\s]+\s*\([\u4e00-\u9fff\s]+\)'
+
+        match1 = re.search(bracket_pattern1, text)
+        match2 = re.search(bracket_pattern2, text)
+
+        logger.debug(f"括号翻译检测 - 文本: '{text}'")
+        logger.debug(f"括号翻译检测 - 模式1匹配: {bool(match1)} {f'-> {match1.group()}' if match1 else ''}")
+        logger.debug(f"括号翻译检测 - 模式2匹配: {bool(match2)} {f'-> {match2.group()}' if match2 else ''}")
+
+        if match1 or match2:
+            logger.debug(f"检测到括号翻译格式，已翻译")
+            return True
+
+        return False
+
+    def _diagnose_cell_translation_decision(self, cell_text: str, table_idx: int, row_idx: int, cell_idx: int) -> dict:
+        """
+        诊断表格单元格的翻译决策，提供详细信息
+
+        Args:
+            cell_text: 单元格文本
+            table_idx: 表格索引
+            row_idx: 行索引
+            cell_idx: 列索引
+
+        Returns:
+            dict: 包含决策信息的字典
+        """
+        diagnosis = {
+            'should_translate': False,
+            'reason': '',
+            'details': {}
+        }
+
+        # 基本信息
+        diagnosis['details']['text_length'] = len(cell_text.strip())
+        diagnosis['details']['chinese_chars'] = len(re.findall(r'[\u4e00-\u9fff]', cell_text))
+        diagnosis['details']['english_chars'] = len(re.findall(r'[a-zA-Z]', cell_text))
+        diagnosis['details']['has_chinese'] = self._contains_chinese_content(cell_text)
+        diagnosis['details']['should_skip'] = self._should_skip_translation(cell_text)
+        diagnosis['details']['is_already_translated'] = self._is_already_translated(cell_text)
+
+        # 决策逻辑
+        if not cell_text.strip():
+            diagnosis['reason'] = '空文本'
+        elif diagnosis['details']['should_skip']:
+            diagnosis['reason'] = '满足跳过条件（数字、符号等）'
+        elif diagnosis['details']['is_already_translated']:
+            diagnosis['reason'] = '检测为已翻译内容'
+        elif self.source_lang == "zh" and not diagnosis['details']['has_chinese']:
+            diagnosis['reason'] = '中文翻译模式但无中文内容'
+        else:
+            diagnosis['should_translate'] = True
+            diagnosis['reason'] = '需要翻译'
+
+        # 记录详细日志
+        logger.info(f"表格 {table_idx} 行 {row_idx} 列 {cell_idx} 翻译决策:")
+        logger.info(f"  文本: '{cell_text[:100]}{'...' if len(cell_text) > 100 else ''}'")
+        logger.info(f"  长度: {diagnosis['details']['text_length']}, 中文字符: {diagnosis['details']['chinese_chars']}, 英文字符: {diagnosis['details']['english_chars']}")
+        logger.info(f"  决策: {'需要翻译' if diagnosis['should_translate'] else '跳过翻译'}")
+        logger.info(f"  原因: {diagnosis['reason']}")
+
+        return diagnosis
+
+    def _validate_translation_result(self, original_text: str, translated_text: str, location: str) -> list:
+        """
+        验证翻译结果的质量，检测潜在问题
+
+        Args:
+            original_text: 原文
+            translated_text: 译文
+            location: 位置信息
+
+        Returns:
+            list: 发现的问题列表
+        """
+        issues = []
+
+        if not translated_text or not translated_text.strip():
+            issues.append(f"{location}: 翻译结果为空")
+            return issues
+
+        # 1. 检查是否包含思考过程残留
+        thinking_indicators = [
+            "让我", "我来", "我需要", "首先", "根据", "考虑到", "分析", "思考",
+            "这个术语", "在材料科学", "在英文中", "最合适", "最准确", "最恰当",
+            "应该翻译", "可以翻译", "比较合适", "在这个语境"
+        ]
+
+        for indicator in thinking_indicators:
+            if indicator in translated_text:
+                issues.append(f"{location}: 翻译结果包含思考过程 - '{indicator}'")
+                break
+
+        # 2. 检查是否包含提示词残留
+        prompt_indicators = [
+            "翻译结果", "译文", "以下是", "这是", "请将", "将以下",
+            "translation:", "translate:", "result:"
+        ]
+
+        for indicator in prompt_indicators:
+            if indicator.lower() in translated_text.lower():
+                issues.append(f"{location}: 翻译结果包含提示词 - '{indicator}'")
+                break
+
+        # 3. 检查中文→英文翻译是否完整
+        if self.source_lang == "zh" and self.target_lang == "en":
+            # 检查原文中的中文是否都被翻译
+            original_chinese = re.findall(r'[\u4e00-\u9fff]', original_text)
+            translated_chinese = re.findall(r'[\u4e00-\u9fff]', translated_text)
+
+            if len(original_chinese) > 0 and len(translated_chinese) > len(original_chinese) * 0.5:
+                issues.append(f"{location}: 可能存在未翻译的中文内容")
+
+            # 检查译文是否主要包含英文
+            english_chars = len(re.findall(r'[a-zA-Z]', translated_text))
+            total_chars = len(re.sub(r'\s', '', translated_text))
+            if total_chars > 0 and english_chars / total_chars < 0.3:
+                issues.append(f"{location}: 译文英文字符比例过低，可能翻译不完整")
+
+        # 4. 检查英文→中文翻译是否完整
+        elif self.source_lang == "en" and self.target_lang == "zh":
+            # 检查译文是否包含足够的中文
+            chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', translated_text))
+            total_chars = len(re.sub(r'\s', '', translated_text))
+            if total_chars > 0 and chinese_chars / total_chars < 0.3:
+                issues.append(f"{location}: 译文中文字符比例过低，可能翻译不完整")
+
+        # 5. 检查是否原文和译文完全相同（可能未翻译）
+        if original_text.strip() == translated_text.strip() and len(original_text.strip()) > 3:
+            issues.append(f"{location}: 原文和译文完全相同，可能未翻译")
+
+        # 6. 检查长度异常
+        original_len = len(original_text.strip())
+        translated_len = len(translated_text.strip())
+
+        if translated_len < original_len * 0.2:
+            issues.append(f"{location}: 译文过短，可能翻译不完整")
+        elif translated_len > original_len * 5:
+            issues.append(f"{location}: 译文过长，可能包含多余内容")
+
+        return issues
+
+    def _contains_mixed_languages(self, text: str) -> bool:
+        """检查文本是否包含混合语言"""
+        if not text or not text.strip():
+            return False
+
+        has_chinese = False
+        has_english = False
+
+        for char in text:
+            if '\u4e00' <= char <= '\u9fff':  # 中文字符范围
+                has_chinese = True
+            elif char.isalpha() and char.isascii():  # 英文字符
+                has_english = True
+
+            if has_chinese and has_english:
+                return True
+
+        return False
+
+    def _is_chinese_text(self, text: str) -> bool:
+        """检查文本是否主要是中文"""
+        if not text or not text.strip():
+            return False
+
+        chinese_count = 0
+        total_chars = 0
+
+        for char in text:
+            if not char.isspace() and char not in '.,;:!?()[]{}""''':
+                total_chars += 1
+                if '\u4e00' <= char <= '\u9fff':
+                    chinese_count += 1
+
+        return total_chars > 0 and chinese_count / total_chars > 0.5
+
+    def _is_english_text(self, text: str) -> bool:
+        """检查文本是否主要是英文"""
+        if not text or not text.strip():
+            return False
+
+        english_count = 0
+        total_chars = 0
+
+        for char in text:
+            if not char.isspace() and char not in '.,;:!?()[]{}""''':
+                total_chars += 1
+                if char.isalpha() and char.isascii():
+                    english_count += 1
+
+        return total_chars > 0 and english_count / total_chars > 0.5
 
     def export_to_excel(self, translation_results, original_file_path, target_language):
         """将翻译结果导出为Excel文件"""
@@ -1326,9 +1559,8 @@ class DocumentProcessor:
                     # 增加重试延迟（指数退避）
                     retry_delay = min(retry_delay * 1.5, max_retry_delay)
                 else:
-                    # 最后一次尝试失败，返回原文而不是抛出异常
-                    logger.error(f"翻译失败，已重试 {self.retry_count} 次，返回原文: {str(e)}")
-                    return text
+                    # 最后一次尝试失败，抛出异常
+                    raise Exception(f"翻译失败，已重试 {self.retry_count} 次: {str(e)}")
 
     def translate_paragraph(self, text: str, target_language: str, terminology: Dict) -> str:
         """翻译段落文本"""
@@ -1493,62 +1725,95 @@ class DocumentProcessor:
             # 返回错误信息而不是抛出异常，这样可以继续处理其他段落
             return f"翻译失败: {str(e)}"
 
-    def _preprocess_multiline_text(self, text: str) -> Tuple[str, bool]:
+    def _translate_cell_with_retry(self, text: str, terminology: Dict, table_idx: int, row_idx: int, cell_idx: int, max_retries: int = 3) -> str:
         """
-        预处理多行文本以解决AI模型翻译不完整的问题
+        带重试机制的表格单元格翻译方法
 
         Args:
-            text: 原始文本
+            text: 要翻译的文本
+            terminology: 术语词典
+            table_idx: 表格索引
+            row_idx: 行索引
+            cell_idx: 列索引
+            max_retries: 最大重试次数
 
         Returns:
-            Tuple[str, bool]: (处理后的文本, 是否为多行文本)
+            str: 翻译结果
         """
-        # 检查是否为多行文本
-        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        last_error = None
 
-        if len(lines) <= 1:
-            # 单行或空文本，不需要预处理
-            return text, False
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"表格 {table_idx} 行 {row_idx} 列 {cell_idx} 翻译尝试 {attempt + 1}/{max_retries}")
 
-        logger.info(f"检测到多行文本，行数: {len(lines)}")
-        logger.info(f"原始多行文本: {text[:100]}...")
+                if self.preprocess_terms:
+                    # 使用术语预处理方式翻译
+                    if self.source_lang == "zh":
+                        # 中文 → 外语：使用新的直接术语替换策略
+                        cell_terminology = self.term_extractor.extract_terms(text, terminology)
+                        logger.info(f"从单元格提取到 {len(cell_terminology)} 个术语")
 
-        # 将多行文本合并为单行，使用分号分隔
-        # 这样可以确保AI模型翻译所有内容
-        merged_text = '; '.join(lines)
+                        if cell_terminology:
+                            terms_sample = list(cell_terminology.items())[:5]
+                            logger.info(f"术语样本（前5个）: {terms_sample}")
+                            logger.info("使用新的直接术语替换策略进行翻译")
+                            # 直接使用提取的术语进行翻译，翻译器内部会处理术语替换
+                            translation = self.translator.translate_text(text, cell_terminology, self.source_lang, self.target_lang)
+                        else:
+                            logger.info("未找到匹配术语，使用常规翻译（带完整术语库）")
+                            translation = self.translator.translate_text(text, terminology, self.source_lang, self.target_lang)
+                    else:
+                        # 外语 → 中文：使用新的直接术语替换策略
+                        cell_terminology = self.term_extractor.extract_foreign_terms(text, terminology)
+                        logger.info(f"从单元格提取到 {len(cell_terminology)} 个外语术语")
 
-        logger.info(f"合并后的单行文本: {merged_text[:100]}...")
+                        if cell_terminology:
+                            terms_sample = list(cell_terminology.items())[:5]
+                            logger.info(f"术语样本（前5个）: {terms_sample}")
+                            logger.info("使用新的直接术语替换策略进行翻译")
+                            translation = self.translator.translate_text(text, cell_terminology, self.source_lang, self.target_lang)
+                        else:
+                            logger.info("未找到匹配术语，使用常规翻译")
+                            translation = self.translator.translate_text(text, None, self.source_lang, self.target_lang)
+                else:
+                    # 不使用术语预处理，直接翻译
+                    logger.info("不使用术语预处理，使用常规翻译")
+                    if self.source_lang == "zh":
+                        translation = self.translator.translate_text(text, terminology, self.source_lang, self.target_lang)
+                    else:
+                        translation = self.translator.translate_text(text, None, self.source_lang, self.target_lang)
 
-        return merged_text, True
+                # 验证翻译结果
+                if translation and translation.strip():
+                    # 检查是否包含占位符残留
+                    import re
+                    placeholder_patterns = [r'\[术语\d+\]', r'\[Term\s*\d+\]']
+                    has_placeholders = any(re.search(pattern, translation) for pattern in placeholder_patterns)
 
-    def _postprocess_multiline_translation(self, translation: str) -> str:
-        """
-        后处理多行文本的翻译结果
+                    if has_placeholders:
+                        logger.warning(f"翻译结果包含占位符残留，尝试重新翻译")
+                        if attempt < max_retries - 1:
+                            continue
+                        else:
+                            logger.error(f"多次重试后仍有占位符残留: {translation}")
 
-        Args:
-            translation: 翻译结果
+                    logger.info(f"表格 {table_idx} 行 {row_idx} 列 {cell_idx} 翻译成功")
+                    return translation
+                else:
+                    raise Exception("翻译结果为空")
 
-        Returns:
-            str: 格式化后的翻译结果
-        """
-        logger.info(f"后处理多行翻译结果: {translation[:100]}...")
+            except Exception as e:
+                last_error = e
+                logger.warning(f"表格 {table_idx} 行 {row_idx} 列 {cell_idx} 翻译尝试 {attempt + 1} 失败: {str(e)}")
 
-        # 尝试将翻译结果重新分行
-        # 查找可能的分隔符
-        separators = ['; ', ';', '. ', '.']
+                if attempt < max_retries - 1:
+                    import time
+                    wait_time = (attempt + 1) * 2  # 递增等待时间
+                    logger.info(f"等待 {wait_time} 秒后重试...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"表格 {table_idx} 行 {row_idx} 列 {cell_idx} 所有重试均失败")
 
-        for separator in separators:
-            if separator in translation:
-                # 按分隔符分割
-                parts = [part.strip() for part in translation.split(separator) if part.strip()]
-
-                if len(parts) > 1:
-                    # 重新组织为多行格式
-                    formatted_translation = '\n'.join(parts)
-                    logger.info(f"成功分行，行数: {len(parts)}")
-                    logger.info(f"格式化后的翻译: {formatted_translation[:100]}...")
-                    return formatted_translation
-
-        # 如果无法分行，返回原始翻译
-        logger.info("无法分行，返回原始翻译")
-        return translation
+        # 所有重试都失败，返回原文
+        logger.error(f"表格 {table_idx} 行 {row_idx} 列 {cell_idx} 翻译最终失败: {str(last_error)}")
+        return text  # 返回原文而不是错误信息

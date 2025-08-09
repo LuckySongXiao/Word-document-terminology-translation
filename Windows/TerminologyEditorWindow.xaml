@@ -1,0 +1,261 @@
+<Window x:Class="DocumentTranslator.Windows.TerminologyEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="术语库编辑器" Height="700" Width="900"
+        WindowStartupLocation="CenterOwner"
+        MinHeight="500" MinWidth="700">
+    
+    <Window.Resources>
+        <Style x:Key="TermCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="#F8F9FA"/>
+            <Setter Property="BorderBrush" Value="#E9ECEF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="Padding" Value="10"/>
+        </Style>
+        
+        <Style x:Key="TermHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="#2C3E50"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <!-- 标题栏 -->
+        <Border Grid.Row="0" Background="#27AE60" Padding="15">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="📝 术语库编辑器" FontSize="18" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
+                <TextBlock x:Name="TermCountText" Text="(共 0 条术语)" FontSize="12" Foreground="LightGray" 
+                           VerticalAlignment="Center" Margin="10,0,0,0"/>
+            </StackPanel>
+        </Border>
+        
+        <!-- 工具栏 -->
+        <Border Grid.Row="1" Background="#ECF0F1" Padding="10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <!-- 搜索和筛选 -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <TextBlock Text="🔍 搜索:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <TextBox x:Name="SearchBox" Width="200" Height="25" TextChanged="SearchTerms" 
+                             ToolTip="输入中文或外语术语进行搜索"/>
+                    
+                    <TextBlock Text="🌐 语言:" VerticalAlignment="Center" Margin="20,0,5,0"/>
+                    <ComboBox x:Name="LanguageFilter" Width="100" Height="25" SelectionChanged="FilterByLanguage">
+                        <ComboBoxItem Content="全部" IsSelected="True"/>
+                        <ComboBoxItem Content="英语"/>
+                        <ComboBoxItem Content="日语"/>
+                        <ComboBoxItem Content="韩语"/>
+                        <ComboBoxItem Content="法语"/>
+                        <ComboBoxItem Content="德语"/>
+                        <ComboBoxItem Content="西班牙语"/>
+                        <ComboBoxItem Content="意大利语"/>
+                        <ComboBoxItem Content="俄语"/>
+                    </ComboBox>
+                </StackPanel>
+                
+                <!-- 操作按钮 -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Content="➕ 添加术语" Click="AddNewTerm" Width="90" Height="30" Margin="5,0"/>
+                    <Button Content="📁 导入MD" Click="ImportTerms" Width="90" Height="30" Margin="5,0"/>
+                    <Button Content="📤 导出MD" Click="ExportTerms" Width="90" Height="30" Margin="5,0"/>
+                    <Button Content="💾 保存术语库" Click="SaveTerminology" Width="100" Height="30" Margin="5,0"
+                            Background="#3498DB" Foreground="White"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+        
+        <!-- 术语列表 -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="3*"/>
+            </Grid.ColumnDefinitions>
+            
+            <!-- 左侧：术语列表 -->
+            <Border Grid.Column="0" Style="{StaticResource TermCardStyle}" Margin="10,5,5,5">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <TextBlock Grid.Row="0" Text="📋 术语列表" Style="{StaticResource TermHeaderStyle}"/>
+                    
+                    <ListBox Grid.Row="1" x:Name="TermListBox" SelectionChanged="TermSelected"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="White" BorderBrush="#BDC3C7" BorderThickness="1" 
+                                        CornerRadius="4" Margin="2" Padding="8">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding ChineseTerm}" FontWeight="Bold" FontSize="12"/>
+                                        <TextBlock Text="{Binding PreviewText}" FontSize="10" Foreground="Gray" 
+                                                   TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
+            
+            <!-- 分隔符 -->
+            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" 
+                          Background="#BDC3C7"/>
+            
+            <!-- 右侧：术语编辑 -->
+            <Border Grid.Column="2" Style="{StaticResource TermCardStyle}" Margin="5,5,10,5">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <TextBlock Grid.Row="0" Text="✏️ 术语编辑" Style="{StaticResource TermHeaderStyle}"/>
+                    
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="EditPanel">
+                            <!-- 中文术语 -->
+                            <TextBlock Text="🇨🇳 中文术语" FontWeight="Bold" Margin="0,5"/>
+                            <TextBox x:Name="ChineseTermBox" Height="25" Margin="0,2,0,10"/>
+                            
+                            <!-- 术语分类 -->
+                            <TextBlock Text="📂 分类" FontWeight="Bold" Margin="0,5"/>
+                            <ComboBox x:Name="CategoryBox" Height="25" Margin="0,2,0,10" IsEditable="True">
+                                <ComboBoxItem Content="技术术语" IsSelected="True"/>
+                                <ComboBoxItem Content="商业术语"/>
+                                <ComboBoxItem Content="法律术语"/>
+                                <ComboBoxItem Content="医学术语"/>
+                                <ComboBoxItem Content="教育术语"/>
+                                <ComboBoxItem Content="其他"/>
+                            </ComboBox>
+                            
+                            <!-- 各语言翻译 -->
+                            <TextBlock Text="🌍 各语言翻译" FontWeight="Bold" Margin="0,15,0,5"/>
+                            
+                            <TabControl x:Name="LanguageTabControl" Height="300">
+                                <TabItem Header="🇺🇸 英语">
+                                    <StackPanel Margin="10">
+                                        <TextBox x:Name="EnglishTermBox" Height="25" Margin="0,5"/>
+                                        <TextBlock Text="备注:" FontWeight="Bold" Margin="0,10,0,5"/>
+                                        <TextBox x:Name="EnglishNoteBox" Height="60" TextWrapping="Wrap" 
+                                                 AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
+                                    </StackPanel>
+                                </TabItem>
+                                
+                                <TabItem Header="🇯🇵 日语">
+                                    <StackPanel Margin="10">
+                                        <TextBox x:Name="JapaneseTermBox" Height="25" Margin="0,5"/>
+                                        <TextBlock Text="备注:" FontWeight="Bold" Margin="0,10,0,5"/>
+                                        <TextBox x:Name="JapaneseNoteBox" Height="60" TextWrapping="Wrap" 
+                                                 AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
+                                    </StackPanel>
+                                </TabItem>
+                                
+                                <TabItem Header="🇰🇷 韩语">
+                                    <StackPanel Margin="10">
+                                        <TextBox x:Name="KoreanTermBox" Height="25" Margin="0,5"/>
+                                        <TextBlock Text="备注:" FontWeight="Bold" Margin="0,10,0,5"/>
+                                        <TextBox x:Name="KoreanNoteBox" Height="60" TextWrapping="Wrap" 
+                                                 AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
+                                    </StackPanel>
+                                </TabItem>
+                                
+                                <TabItem Header="🇫🇷 法语">
+                                    <StackPanel Margin="10">
+                                        <TextBox x:Name="FrenchTermBox" Height="25" Margin="0,5"/>
+                                        <TextBlock Text="备注:" FontWeight="Bold" Margin="0,10,0,5"/>
+                                        <TextBox x:Name="FrenchNoteBox" Height="60" TextWrapping="Wrap" 
+                                                 AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
+                                    </StackPanel>
+                                </TabItem>
+                                
+                                <TabItem Header="🇩🇪 德语">
+                                    <StackPanel Margin="10">
+                                        <TextBox x:Name="GermanTermBox" Height="25" Margin="0,5"/>
+                                        <TextBlock Text="备注:" FontWeight="Bold" Margin="0,10,0,5"/>
+                                        <TextBox x:Name="GermanNoteBox" Height="60" TextWrapping="Wrap" 
+                                                 AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
+                                    </StackPanel>
+                                </TabItem>
+                                
+                                <TabItem Header="🇪🇸 西班牙语">
+                                    <StackPanel Margin="10">
+                                        <TextBox x:Name="SpanishTermBox" Height="25" Margin="0,5"/>
+                                        <TextBlock Text="备注:" FontWeight="Bold" Margin="0,10,0,5"/>
+                                        <TextBox x:Name="SpanishNoteBox" Height="60" TextWrapping="Wrap" 
+                                                 AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
+                                    </StackPanel>
+                                </TabItem>
+                                
+                                <TabItem Header="🇮🇹 意大利语">
+                                    <StackPanel Margin="10">
+                                        <TextBox x:Name="ItalianTermBox" Height="25" Margin="0,5"/>
+                                        <TextBlock Text="备注:" FontWeight="Bold" Margin="0,10,0,5"/>
+                                        <TextBox x:Name="ItalianNoteBox" Height="60" TextWrapping="Wrap" 
+                                                 AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
+                                    </StackPanel>
+                                </TabItem>
+                                
+                                <TabItem Header="🇷🇺 俄语">
+                                    <StackPanel Margin="10">
+                                        <TextBox x:Name="RussianTermBox" Height="25" Margin="0,5"/>
+                                        <TextBlock Text="备注:" FontWeight="Bold" Margin="0,10,0,5"/>
+                                        <TextBox x:Name="RussianNoteBox" Height="60" TextWrapping="Wrap" 
+                                                 AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
+                                    </StackPanel>
+                                </TabItem>
+                            </TabControl>
+                        </StackPanel>
+                    </ScrollViewer>
+                    
+                    <!-- 编辑操作按钮 -->
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+                        <Button Content="💾 保存术语" Click="SaveCurrentTerm" Width="100" Height="30" Margin="5,0"
+                                Background="#27AE60" Foreground="White"/>
+                        <Button Content="🗑️ 删除术语" Click="DeleteCurrentTerm" Width="100" Height="30" Margin="5,0"
+                                Background="#E74C3C" Foreground="White"/>
+                        <Button Content="🔄 重置" Click="ResetCurrentTerm" Width="80" Height="30" Margin="5,0"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+        
+        <!-- 状态栏 -->
+        <Border Grid.Row="3" Background="#34495E" Padding="10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <TextBlock x:Name="StatusText" Text="就绪" Foreground="White" VerticalAlignment="Center"/>
+                
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Content="📋 批量操作" Click="ShowBatchOperations" Width="100" Height="25" Margin="5,0"/>
+                    <Button Content="🔧 设置" Click="ShowSettings" Width="80" Height="25" Margin="5,0"/>
+                    <Button Content="❓ 帮助" Click="ShowHelp" Width="80" Height="25" Margin="5,0"/>
+                    <Button Content="✅ 关闭" Click="CloseWindow" Width="80" Height="25" Margin="5,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+        
+    </Grid>
+</Window>

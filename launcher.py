@@ -50,10 +50,6 @@ class LauncherApp:
         self.server_running = False
         self.web_thread = None
 
-        # 实时日志监控
-        self.log_monitor_thread = None
-        self.monitoring_logs = False
-
         self.setup_ui()
         self.center_window()
 
@@ -235,9 +231,6 @@ class LauncherApp:
         # 初始化日志
         self.log_message("Web启动器已就绪，即将自动启动服务器...")
 
-        # 启动实时日志监控
-        self.start_log_monitoring()
-
     def clear_logs(self):
         """清空日志"""
         self.terminal_text.config(state=tk.NORMAL)
@@ -301,80 +294,8 @@ class LauncherApp:
     def on_closing(self):
         """窗口关闭事件处理"""
         if messagebox.askokcancel("退出", "确定要退出启动器吗？\n这将同时停止Web服务器。"):
-            # 停止日志监控
-            self.stop_log_monitoring()
             self.stop_server()
             self.root.destroy()
-
-    def start_log_monitoring(self):
-        """启动实时日志监控"""
-        if not self.monitoring_logs:
-            self.monitoring_logs = True
-            self.log_monitor_thread = threading.Thread(target=self._monitor_realtime_log, daemon=True)
-            self.log_monitor_thread.start()
-            self.log_message("实时日志监控已启动", "INFO")
-
-    def stop_log_monitoring(self):
-        """停止实时日志监控"""
-        self.monitoring_logs = False
-        if self.log_monitor_thread:
-            self.log_monitor_thread.join(timeout=1)
-
-    def _monitor_realtime_log(self):
-        """监控realtime.log文件的变化"""
-        log_file = "realtime.log"
-        last_position = 0
-
-        while self.monitoring_logs:
-            try:
-                if os.path.exists(log_file):
-                    with open(log_file, 'r', encoding='utf-8') as f:
-                        # 移动到上次读取的位置
-                        f.seek(last_position)
-                        new_content = f.read()
-
-                        if new_content:
-                            # 更新位置
-                            last_position = f.tell()
-
-                            # 处理新内容
-                            lines = new_content.strip().split('\n')
-                            for line in lines:
-                                if line.strip():
-                                    self._process_log_line(line)
-
-                time.sleep(0.5)  # 每0.5秒检查一次
-            except Exception as e:
-                # 静默处理错误，避免干扰主程序
-                pass
-
-    def _process_log_line(self, line):
-        """处理日志行"""
-        try:
-            # 解析日志级别
-            level = "INFO"
-            if " - ERROR - " in line:
-                level = "ERROR"
-            elif " - WARNING - " in line:
-                level = "WARNING"
-            elif " - SUCCESS - " in line or "成功" in line:
-                level = "SUCCESS"
-            elif " - DEBUG - " in line:
-                level = "DEBUG"
-
-            # 提取消息内容（去除时间戳和级别前缀）
-            parts = line.split(" - ", 3)
-            if len(parts) >= 4:
-                message = parts[3]  # 消息内容
-            else:
-                message = line  # 如果格式不匹配，显示整行
-
-            # 在GUI线程中显示日志
-            self.root.after(0, lambda msg=message, lvl=level: self.log_message(f"服务器: {msg}", lvl))
-
-        except Exception:
-            # 如果解析失败，直接显示原始行
-            self.root.after(0, lambda msg=line: self.log_message(f"服务器: {msg}", "INFO"))
 
     def log_message(self, message, level="INFO"):
         """添加日志消息到终端显示区域"""
@@ -533,87 +454,102 @@ class LauncherApp:
     def _start_embedded_server(self, port, work_dir):
         """在打包环境中启动内嵌Web服务器"""
         try:
-            # 在打包环境中，直接在线程中启动Web服务器，避免子进程递归问题
-            self.root.after(0, lambda: self.log_message("使用线程方式启动内嵌Web服务器", "INFO"))
+            # 设置工作目录
+            original_cwd = os.getcwd()
+            os.chdir(work_dir)
+            self.root.after(0, lambda: self.log_message(f"切换工作目录到: {work_dir}", "INFO"))
 
-            def start_server_thread():
+            # 启动Web服务器线程
+            def start_server(server_port):
                 try:
-                    # 设置工作目录
-                    original_cwd = os.getcwd()
-                    os.chdir(work_dir)
-                    self.root.after(0, lambda: self.log_message(f"切换工作目录到: {work_dir}", "INFO"))
-
-                    # 在打包环境中，需要确保模块路径正确
-                    if hasattr(sys, '_MEIPASS'):
-                        # PyInstaller打包环境，添加_internal目录到路径
-                        internal_path = os.path.join(sys._MEIPASS, '_internal')
-                        if os.path.exists(internal_path) and internal_path not in sys.path:
-                            sys.path.insert(0, internal_path)
-                        # 确保当前目录也在路径中
-                        if sys._MEIPASS not in sys.path:
-                            sys.path.insert(0, sys._MEIPASS)
-
-                        # 在封装环境中，给文件解压一些时间
-                        self.root.after(0, lambda: self.log_message("检测到封装环境，等待资源文件完全解压...", "INFO"))
-                        time.sleep(3)  # 等待3秒确保文件解压完成
-
-                    self.root.after(0, lambda: self.log_message("正在导入Web服务器模块...", "INFO"))
-
-                    # 导入Web服务器模块
+                    # 导入并启动web服务器
                     import uvicorn
+                    from web.api import app
+                    from utils.terminology import load_terminology
+                    from services.translator import TranslationService
 
-                    # 重要：在封装环境中，需要手动初始化翻译服务
                     self.root.after(0, lambda: self.log_message("正在初始化翻译服务...", "INFO"))
-                    try:
-                        from services.translator import TranslationService
-                        translator = TranslationService()
 
-                        # 将翻译服务实例传递给API模块
+                    # 初始化翻译服务
+                    try:
+                        translator = TranslationService()
                         from web.api import set_translator_instance
                         set_translator_instance(translator)
                         self.root.after(0, lambda: self.log_message("翻译服务初始化成功", "SUCCESS"))
                     except Exception as e:
-                        import traceback
-                        error_details = traceback.format_exc()
-                        self.root.after(0, lambda err=e: self.log_message(f"翻译服务初始化失败: {err}", "ERROR"))
-                        self.root.after(0, lambda details=error_details: self.log_message(f"错误详情: {details}", "DEBUG"))
-                        self.root.after(0, lambda: self.log_message("将继续启动服务器，但翻译功能可能不可用", "WARNING"))
+                        self.root.after(0, lambda err=e: self.log_message(f"翻译服务初始化失败: {err}", "WARNING"))
 
-                    # 导入app
-                    from web.api import app
+                    # 加载术语库
+                    try:
+                        terminology = load_terminology()
+                        if terminology:
+                            languages = list(terminology.keys())
+                            self.root.after(0, lambda lang_count=len(languages): self.log_message(f"成功加载术语库，包含 {lang_count} 种语言", "SUCCESS"))
+                        else:
+                            self.root.after(0, lambda: self.log_message("术语库为空", "WARNING"))
+                    except Exception as e:
+                        self.root.after(0, lambda err=e: self.log_message(f"加载术语库失败: {err}", "WARNING"))
 
-                    self.root.after(0, lambda: self.log_message("Web服务器模块导入成功", "SUCCESS"))
-                    self.root.after(0, lambda: self.log_message(f"启动Web服务器，地址: http://0.0.0.0:{port}", "INFO"))
+                    self.root.after(0, lambda p=server_port: self.log_message(f"启动Web服务器，地址: http://0.0.0.0:{p}", "INFO"))
 
-                    # 配置uvicorn
-                    config = uvicorn.Config(
-                        app,
-                        host="0.0.0.0",
-                        port=port,
-                        log_level="error",
-                        access_log=False,
-                        log_config=None  # 避免日志配置冲突
-                    )
-
-                    server = uvicorn.Server(config)
+                    # 启动uvicorn服务器 - 使用简化配置
                     self.root.after(0, lambda: self.log_message("Web服务器配置完成，正在启动...", "INFO"))
 
-                    # 启动服务器
-                    server.run()
+                    # 在启动前再次检查端口，确保可用
+                    current_port = server_port
+                    if self.is_port_in_use(current_port):
+                        # 如果端口被占用，尝试下一个端口
+                        original_port = current_port
+                        while self.is_port_in_use(current_port) and current_port < 8020:
+                            current_port += 1
+
+                        if current_port != original_port:
+                            self.root.after(0, lambda orig=original_port, curr=current_port: self.log_message(f"端口 {orig} 被占用，改用端口 {curr}", "WARNING"))
+
+                        if current_port >= 8020:
+                            raise Exception("无法找到可用端口（8000-8019都被占用）")
+
+                    try:
+                        # 方法1: 使用uvicorn.run直接启动（最简单可靠）
+                        self.root.after(0, lambda: self.log_message("使用uvicorn.run启动服务器...", "INFO"))
+                        uvicorn.run(
+                            app,
+                            host="0.0.0.0",
+                            port=current_port,
+                            log_level="error",
+                            access_log=False,
+                            loop="asyncio"
+                        )
+                    except Exception as e:
+                        self.root.after(0, lambda err=e: self.log_message(f"uvicorn.run启动失败: {err}", "WARNING"))
+
+                        # 方法2: 使用Server类启动
+                        try:
+                            self.root.after(0, lambda: self.log_message("尝试使用Server类启动...", "INFO"))
+                            config = uvicorn.Config(
+                                app,
+                                host="0.0.0.0",
+                                port=current_port,
+                                log_level="error",
+                                access_log=False,
+                                log_config=None  # 避免日志配置冲突
+                            )
+                            server = uvicorn.Server(config)
+                            server.run()
+                        except Exception as e2:
+                            self.root.after(0, lambda err=e2: self.log_message(f"Server类启动也失败: {err}", "ERROR"))
+                            raise e2
 
                 except Exception as e:
-                    self.root.after(0, lambda err=e: self.log_message(f"Web服务器启动失败: {err}", "ERROR"))
-                    import traceback
-                    error_details = traceback.format_exc()
-                    self.root.after(0, lambda details=error_details: self.log_message(f"错误详情: {details}", "DEBUG"))
+                    self.root.after(0, lambda err=e: self.log_message(f"内嵌Web服务器启动失败: {err}", "ERROR"))
+                    raise
                 finally:
                     # 恢复原工作目录
                     os.chdir(original_cwd)
 
             # 在新线程中启动Web服务器
-            web_thread = threading.Thread(target=start_server_thread, daemon=True)
+            web_thread = threading.Thread(target=lambda: start_server(port), daemon=True)
             web_thread.start()
-            self.web_thread = web_thread
 
             # 等待服务器启动并打开浏览器
             self._wait_and_open_browser(port)
@@ -621,62 +557,6 @@ class LauncherApp:
         except Exception as e:
             self.root.after(0, lambda err=e: self.log_message(f"启动内嵌服务器失败: {err}", "ERROR"))
             self.root.after(0, lambda err=e: self.show_error(f"启动Web服务器失败: {err}"))
-
-    def _wait_subprocess_and_open_browser(self, port, process):
-        """等待子进程Web服务器启动并打开浏览器"""
-        def check_server():
-            max_attempts = 30
-            attempt = 0
-
-            while attempt < max_attempts:
-                attempt += 1
-                self.root.after(0, lambda a=attempt, m=max_attempts: self.log_message(f"正在等待服务器启动... ({a}/{m})", "INFO"))
-
-                # 检查进程是否还在运行
-                if process.poll() is not None:
-                    self.root.after(0, lambda: self.log_message("Web服务器进程已退出", "ERROR"))
-                    return
-
-                # 检查服务器是否响应
-                try:
-                    self.root.after(0, lambda a=attempt, m=max_attempts: self.log_message(f"检查服务器状态... ({a}/{m})", "INFO"))
-
-                    import urllib.request
-                    import urllib.error
-
-                    response = urllib.request.urlopen(f'http://localhost:{port}/', timeout=2)
-                    if response.getcode() == 200:
-                        self.root.after(0, lambda: self.log_message("Web服务器启动成功！", "SUCCESS"))
-                        self.server_running = True
-                        self.server_port = port
-
-                        # 打开浏览器
-                        url = f'http://localhost:{port}'
-                        self.root.after(0, lambda u=url: self.log_message(f"正在打开浏览器: {u}", "INFO"))
-
-                        def open_browser():
-                            try:
-                                webbrowser.open(url)
-                                self.root.after(0, lambda: self.log_message("浏览器已打开", "SUCCESS"))
-                            except Exception as e:
-                                self.root.after(0, lambda err=e: self.log_message(f"打开浏览器失败: {err}", "WARNING"))
-
-                        threading.Thread(target=open_browser, daemon=True).start()
-                        return
-
-                except urllib.error.URLError as e:
-                    self.root.after(0, lambda err=e: self.log_message(f"HTTP检测失败: {err}", "DEBUG"))
-                except Exception as e:
-                    self.root.after(0, lambda err=e: self.log_message(f"服务器检测异常: {err}", "DEBUG"))
-
-                time.sleep(2)
-
-            # 超时处理
-            self.root.after(0, lambda: self.log_message("等待服务器启动超时", "ERROR"))
-            self.root.after(0, lambda: self.show_error("Web服务器启动超时，请检查系统日志"))
-
-        # 在新线程中检查服务器状态
-        threading.Thread(target=check_server, daemon=True).start()
 
     def _wait_and_open_browser(self, port):
         """等待服务器启动并打开浏览器"""

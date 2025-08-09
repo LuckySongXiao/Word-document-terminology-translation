@@ -347,7 +347,7 @@ exe = EXE(
 - 文本文件 (.txt)
 
 支持翻译引擎:
-- 智谱AI (GLM-4-Flash) ✅
+- 智谱AI (glm-4-flash-250414) ✅
 - Ollama (本地模型) ✅
 - 硅基流动 (SiliconFlow) ✅
 - 内网翻译器 ✅
